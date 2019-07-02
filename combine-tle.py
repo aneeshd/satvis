@@ -1,6 +1,5 @@
-# Used to generate telesat.txt from all the TLE files.
+# Used to generate satellites.txt from all the TLE files.
 
-import os
 import glob
 import re
 
@@ -14,8 +13,10 @@ for fname in files:
         if m is None: continue
         
         data = f.read()
-        if m.group(1)=='Inclined':
-            print('I_%s_%s'%(m.group(2), m.group(3)))
-        else:
-            print('P_%s_%s'%(m.group(2), m.group(3)))
+        constellation = 'I' if m.group(1)=='Inclined' else 'P'
+        orbit = int(m.group(2))
+        sat = int(m.group(3))
+        #if constellation!='P': continue
+        #if sat!=1: continue
+        print('%s_%02i_%02i'%(constellation, orbit, sat))
         print(data)

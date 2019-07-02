@@ -6,8 +6,9 @@ canvas {
 }
 </style>
 <body>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.6/d3.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-geo-projection/0.2.9/d3.geo.projection.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/4.13.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-geo/1.9.1/d3-geo.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-geo-projection/2.4.0/d3-geo-projection.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/1.6.19/topojson.min.js"></script>
 <script src="satellite.js"></script>
 <script>
@@ -19,12 +20,14 @@ var radius = height / 2 - 5,
     scale = radius,
     velocity = .02;
 
-var projection = d3.geo.kavrayskiy7()
+//var projection = d3.geoHyperelliptical() //d3.geo.mtFlatPolarQuartic() //d3.geo.kavrayskiy7()
+//var projection = d3.geoMtFlatPolarQuartic() //d3.geo.kavrayskiy7()
+var projection = d3.geoProjection(d3.geoMtFlatPolarQuarticRaw) //d3.geo.kavrayskiy7()
     .scale(170)
     .translate([width / 2, height / 2])
     .precision(.1);
 
-var graticule = d3.geo.graticule();
+var graticule = d3.geoGraticule();
 
 var canvas = d3.select("body").append("canvas")
     .attr("width", width)
@@ -38,43 +41,55 @@ var canvas3 = d3.select("body").append("canvas")
     .attr("width", width)
     .attr("height", height);
 
-var color = d3.scale.ordinal()
+var color = d3.scaleOrdinal()
   .range(["#9e0142","#d53e4f","#f46d43","#fdae61","#fee08b","#ffffbf","#e6f598","#abdda4","#66c2a5","#3288bd","#5e4fa2"]);
 
 var context = canvas.node().getContext("2d");
 var context2 = canvas2.node().getContext("2d");
 var context3 = canvas3.node().getContext("2d");
 
-var path = d3.geo.path()
+var path = d3.geoPath()
     .projection(projection)
     .context(context);
 
-var graticule = d3.geo.graticule();
+var graticule = d3.geoGraticule();
 
-var timeFormat = d3.time.format("%Y-%m-%d %H:%M");
+var timeFormat = d3.timeFormat("%Y-%m-%d %H:%M");
 
 d3.json("world-110m.json", function(error, world) {
   if (error) throw error;
 
-  var land = topojson.feature(world, world.objects.land);
+  function plotglobe() {
+    var land = topojson.feature(world, world.objects.land);
 
-  context.fillStyle = "#ccc";
-  context.beginPath();
-  path(land);
-  context.fill();
+    context.clearRect(0,0,width,height);
 
-  context.strokeStyle = "#ddd";
-  context.beginPath();
-  path(graticule());
-  context.lineWidth = 1;
-  context.stroke();
+    context.fillStyle = "#ccc";
+    context.beginPath();
+    path(land);
+    context.fill();
 
-  context.beginPath();
-  path(graticule.outline());
-  context.lineWidth = 1;
-  context.stroke();
+    context.fillStyle = "#555";
+    context.beginPath();
+    path(topojson.feature(world, world.objects.countries));
+    context.lineWidth = 0.1;
+    context.stroke();
 
-  d3.text("telesat.txt", function(error2, data) {
+    context.strokeStyle = "#ddd";
+    context.beginPath();
+    path(graticule());
+    context.lineWidth = 1;
+    context.stroke();
+
+    context.beginPath();
+    path(graticule.outline());
+    context.lineWidth = 1;
+    context.stroke();
+  }
+
+  plotglobe();
+
+  d3.text("satellites.txt", function(error2, data) {
     if (error2) throw error2;
 
     var stations = [];
@@ -94,11 +109,10 @@ d3.json("world-110m.json", function(error, world) {
         return; 
       }
       
-      //if (stations.length==11) return;
+      //if (stations.length==12) return;
       stations.push({
         name: line.trim()
       });
-      console.log('stations:', stations.length, line);
     });
 
     var now = new Date();
@@ -106,6 +120,16 @@ d3.json("world-110m.json", function(error, world) {
     d3.timer(function(elapsed) {
       var time = new Date(now.getTime() + 300*elapsed);
 
+      if (0) {
+         const config = {
+                 speed: 0.005,
+                 verticalTilt: -30,
+                 horizontalTilt: 0
+               }
+         projection.rotate([config.speed * elapsed - 120, config.verticalTilt, config.horizontalTilt]);
+         plotglobe();
+      }
+      
       context3.clearRect(0,0,width,height);
       context3.globalAlpha = .95;
       context3.drawImage(canvas2.node(),0,0);
@@ -170,7 +194,6 @@ d3.json("world-110m.json", function(error, world) {
     context2.fillStyle = color(name.substring(0,5));
     context2.beginPath();
     context2.arc(xy[0],xy[1],2,0,2*Math.PI);
-    // map height to size of dot: context2.arc(xy[0],xy[1],100/Math.sqrt(pos.height),0,2*Math.PI);
     context2.fill();
 
     context3.font = "bold 11px sans-serif";
