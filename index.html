@@ -26,7 +26,7 @@ var radius = height / 2 - 5,
 //var projection = d3.geoHyperelliptical() //d3.geo.mtFlatPolarQuartic() //d3.geo.kavrayskiy7()
 //var projection = d3.geoMtFlatPolarQuartic() //d3.geo.kavrayskiy7()
 //var projection = d3.geoNaturalEarth1() //d3.geoProjection(d3.geoMtFlatPolarQuarticRaw) //d3.geo.kavrayskiy7()
-var projection = d3.geoProjection(d3.geoMtFlatPolarQuarticRaw) //d3.geo.kavrayskiy7()
+var projection = d3.geoProjection(d3.geoMtFlatPolarQuarticRaw) //d3.geoKavrayskiy7Raw
     .scale(170 * magnify)
     .translate([width / 2, height / 2])
     .precision(.1);
@@ -66,6 +66,8 @@ var shade_path = d3.geoPath()
     .context(shade_context);
 
 var timeFormat = d3.timeFormat("%Y-%m-%d %H:%M");
+
+var stations = [];
 
 d3.json("world-110m.json", function(error, world) {
   if (error) throw error;
@@ -120,7 +122,8 @@ d3.json("world-110m.json", function(error, world) {
   d3.text("satellites.txt", function(error2, data) {
     if (error2) throw error2;
 
-    var stations = [];
+    stations = [];
+
     var lines = data.split("\n");
     lines.forEach(function(line) {
       if (line.length == 0) return;
@@ -134,6 +137,7 @@ d3.json("world-110m.json", function(error, world) {
       if (line[0] == "2") {
         var obj = stations[stations.length-1];
         obj.tle2 = line;
+        obj.satrec = satellite.twoline2satrec(obj.tle1, obj.tle2);
         return; 
       }
       
@@ -178,7 +182,7 @@ d3.json("world-110m.json", function(error, world) {
     });
 
     function plotsat(station, time) {
-      var satrec = satellite.twoline2satrec(station.tle1, station.tle2);
+      var satrec = station.satrec; //satellite.twoline2satrec(station.tle1, station.tle2);
 
       // increment time by 5 minutes
 
