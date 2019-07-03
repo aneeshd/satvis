@@ -11,10 +11,13 @@ canvas {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-geo-projection/2.4.0/d3-geo-projection.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
 <script src="satellite.js"></script>
+<script src="solar-positions.js"></script>
 <script>
 
-var width = 960,
-    height = 600;
+var magnify = 1.5;
+
+var width = 960 * magnify,
+    height = 600 * magnify;
 
 var radius = height / 2 - 5,
     scale = radius,
@@ -22,37 +25,45 @@ var radius = height / 2 - 5,
 
 //var projection = d3.geoHyperelliptical() //d3.geo.mtFlatPolarQuartic() //d3.geo.kavrayskiy7()
 //var projection = d3.geoMtFlatPolarQuartic() //d3.geo.kavrayskiy7()
+//var projection = d3.geoNaturalEarth1() //d3.geoProjection(d3.geoMtFlatPolarQuarticRaw) //d3.geo.kavrayskiy7()
 var projection = d3.geoProjection(d3.geoMtFlatPolarQuarticRaw) //d3.geo.kavrayskiy7()
-    .scale(170)
+    .scale(170 * magnify)
     .translate([width / 2, height / 2])
     .precision(.1);
 
 var graticule = d3.geoGraticule();
 
-var canvas = d3.select("body").append("canvas")
+var map_canvas = d3.select("body").append("canvas")
     .attr("width", width)
     .attr("height", height);
 
-var canvas2 = d3.select("body").append("canvas")
+var sat_canvas = d3.select("body").append("canvas")
     .attr("width", width)
     .attr("height", height);
 
-var canvas3 = d3.select("body").append("canvas")
+var stats_canvas = d3.select("body").append("canvas")
+    .attr("width", width)
+    .attr("height", height);
+
+var shade_canvas = d3.select("body").append("canvas")
     .attr("width", width)
     .attr("height", height);
 
 var color = d3.scaleOrdinal()
   .range(["#9e0142","#d53e4f","#f46d43","#fdae61","#fee08b","#ffffbf","#e6f598","#abdda4","#66c2a5","#3288bd","#5e4fa2"]);
 
-var context = canvas.node().getContext("2d");
-var context2 = canvas2.node().getContext("2d");
-var context3 = canvas3.node().getContext("2d");
+var map_context = map_canvas.node().getContext("2d");
+var sat_context = sat_canvas.node().getContext("2d");
+var stats_context = stats_canvas.node().getContext("2d");
+var shade_context = shade_canvas.node().getContext("2d");
 
 var path = d3.geoPath()
     .projection(projection)
-    .context(context);
+    .context(map_context);
 
-var graticule = d3.geoGraticule();
+var shade_path = d3.geoPath()
+    .projection(projection)
+    .context(shade_context);
 
 var timeFormat = d3.timeFormat("%Y-%m-%d %H:%M");
 
@@ -62,29 +73,46 @@ d3.json("world-110m.json", function(error, world) {
   function plotglobe() {
     var land = topojson.feature(world, world.objects.land);
 
-    context.clearRect(0,0,width,height);
+    map_context.clearRect(0,0,width,height);
 
-    context.fillStyle = "#ccc";
-    context.beginPath();
+    map_context.fillStyle = "#ccc";
+    map_context.beginPath();
     path(land);
-    context.fill();
+    map_context.fill();
 
-    context.fillStyle = "#555";
-    context.beginPath();
+    map_context.fillStyle = "#555";
+    map_context.beginPath();
     path(topojson.feature(world, world.objects.countries));
-    context.lineWidth = 0.1;
-    context.stroke();
+    map_context.lineWidth = 0.1;
+    map_context.stroke();
 
-    context.strokeStyle = "#ddd";
-    context.beginPath();
+    map_context.strokeStyle = "#ddd";
+    map_context.beginPath();
     path(graticule());
-    context.lineWidth = 1;
-    context.stroke();
+    map_context.lineWidth = 1;
+    map_context.stroke();
 
-    context.beginPath();
+    map_context.beginPath();
     path(graticule.outline());
-    context.lineWidth = 1;
-    context.stroke();
+    map_context.lineWidth = 1;
+    map_context.stroke();
+  }
+
+  // adapted from:
+  //  https://observablehq.com/@mbostock/solar-terminator
+  //  https://bl.ocks.org/vasturiano/9bdeddb97d5c71f425743442761d5384
+  function plotshade(time) {
+    shade_context.clearRect(0,0,width,height);
+    var sun = solarPosition(time);
+    var night = d3.geoCircle()
+      .radius(90)
+      .center(antipode(sun))
+    ()
+       
+    shade_context.beginPath();
+    shade_path(night);
+    shade_context.fillStyle = "rgba(0,0,255,0.1)";
+    shade_context.fill();
   }
 
   plotglobe();
@@ -130,21 +158,23 @@ d3.json("world-110m.json", function(error, world) {
          plotglobe();
       }
       
-      context3.clearRect(0,0,width,height);
-      context3.globalAlpha = .95;
-      context3.drawImage(canvas2.node(),0,0);
-      context2.clearRect(0,0,width,height);
-      context2.drawImage(canvas3.node(),0,0);
+      stats_context.clearRect(0,0,width,height);
+      stats_context.globalAlpha = .95;
+      stats_context.drawImage(sat_canvas.node(),0,0);
+      sat_context.clearRect(0,0,width,height);
+      sat_context.drawImage(stats_canvas.node(),0,0);
 
-      context3.clearRect(0,0,width,height);
-      context3.font = "bold 14px sans-serif";
-      context3.fillStyle = "#333";
-      context3.textAlign = "center";
-      context3.fillText(timeFormat(time),width/2,20);
+      // stats_context.clearRect(0,0,width,height);
+      stats_context.font = "bold 14px sans-serif";
+      stats_context.fillStyle = "#333";
+      stats_context.textAlign = "center";
+      stats_context.fillText(timeFormat(time),width/2,20);
 
       stations.forEach(function(d) {
         plotsat(d, time);
       });
+
+      plotshade(time);
     });
 
     function plotsat(station, time) {
@@ -191,14 +221,14 @@ d3.json("world-110m.json", function(error, world) {
   function drawSat(sat, pos) {
     var name = sat.name;
     var xy = projection([pos.longitude*180/Math.PI, pos.latitude*180/Math.PI]);
-    context2.fillStyle = color(name.substring(0,5));
-    context2.beginPath();
-    context2.arc(xy[0],xy[1],2,0,2*Math.PI);
-    context2.fill();
+    sat_context.fillStyle = color(name.substring(0,5));
+    sat_context.beginPath();
+    sat_context.arc(xy[0],xy[1],2,0,2*Math.PI);
+    sat_context.fill();
 
-    context3.font = "bold 11px sans-serif";
-    context3.textAlign = "center";
-    //context3.fillText(name, xy[0], xy[1]+14);
+    stats_context.font = "9px sans-serif";
+    stats_context.textAlign = "center";
+    //stats_context.fillText(name, xy[0], xy[1]+14);
   };
 });
 
