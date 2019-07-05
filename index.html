@@ -4,34 +4,68 @@
 canvas {
   position: absolute;
 }
+svg {
+  position: absolute;
+}
 </style>
 <body>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/4.13.0/d3.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-geo/1.9.1/d3-geo.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-geo-projection/2.4.0/d3-geo-projection.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/dat-gui/0.6.5/dat.gui.js"></script>
+<script src="//unpkg.com/d3-geo-zoom"></script>
 <script src="satellite.js"></script>
 <script src="solar-positions.js"></script>
 <script>
 
-var magnify = 1.5;
+// Controls
+const gui = new dat.GUI();
+// const controls = {
+//   'Volcanoes': true,
+//   'Graticule Grid': true,
+//   'Tectonic Plates': true,
+//   'Voronoi Layer': false,
+//   'Shade': true
+// };
+var Controls = function() {
+  this.run = true;
 
-var width = 960 * magnify,
-    height = 600 * magnify;
+  this.shade = true;
+  this['satellite names'] = false;
+}
+var control = new Controls();
+// gui.add(controls, 'Volcanoes').onChange(enabled => d3.selectAll('.volcano').style('display', enabled ? null : 'none'));
+// gui.add(controls, 'Graticule Grid').onChange(enabled => d3.selectAll('.graticule').style('display', enabled ? null : 'none'));
+// gui.add(controls, 'Tectonic Plates').onChange(enabled => d3.selectAll('.plate').style('display', enabled ? null : 'none'));
+// gui.add(controls, 'Voronoi Layer').onChange(enabled => d3.selectAll('.voronoi').style('display', enabled ? null : 'none'));
+
+var f1 = gui.addFolder('Simulation Options');
+f1.add(control, 'run');
+f1.open();
+
+var f2 = gui.addFolder('Display Options');
+//f2.add(control, 'names');
+f2.add(control, 'satellite names');
+f2.add(control, 'shade');//.onChange(enabled => d3.selectAll('.urquhart').style('display', enabled ? null : 'none'));
+// f2.add(text, 'growthSpeed');
+// f2.add(text, 'maxSize');
+// f2.add(text, 'message');
+f2.open();
+
+const width = window.innerWidth * 0.9;
+const height = window.innerHeight * 0.9;
 
 var radius = height / 2 - 5,
     scale = radius,
     velocity = .02;
 
-//var projection = d3.geoHyperelliptical() //d3.geo.mtFlatPolarQuartic() //d3.geo.kavrayskiy7()
-//var projection = d3.geoMtFlatPolarQuartic() //d3.geo.kavrayskiy7()
-//var projection = d3.geoNaturalEarth1() //d3.geoProjection(d3.geoMtFlatPolarQuarticRaw) //d3.geo.kavrayskiy7()
-var projection = d3.geoProjection(d3.geoMtFlatPolarQuarticRaw) //d3.geoKavrayskiy7Raw
-    .scale(170 * magnify)
-    .translate([width / 2, height / 2])
-    .precision(.1);
-
 var graticule = d3.geoGraticule();
+
+var svg = d3.select("body").append("svg")
+    .attr("width", width)
+    .attr("height", height);
+var g = svg.append("g");
 
 var map_canvas = d3.select("body").append("canvas")
     .attr("width", width)
@@ -57,13 +91,6 @@ var sat_context = sat_canvas.node().getContext("2d");
 var stats_context = stats_canvas.node().getContext("2d");
 var shade_context = shade_canvas.node().getContext("2d");
 
-var path = d3.geoPath()
-    .projection(projection)
-    .context(map_context);
-
-var shade_path = d3.geoPath()
-    .projection(projection)
-    .context(shade_context);
 
 var timeFormat = d3.timeFormat("%Y-%m-%d %H:%M");
 
@@ -71,6 +98,27 @@ var stations = [];
 
 d3.json("world-110m.json", function(error, world) {
   if (error) throw error;
+
+  var projection = 
+    //d3.geoOrthographic()
+    d3.geoProjection(d3.geoMtFlatPolarQuarticRaw)
+    //d3.geoProjection(d3.geoKavrayskiy7Raw)
+      //.scale(150)
+      .fitSize([width*0.8, height*0.8], topojson.feature(world, world.objects.land))
+      .translate([width / 2, height / 2])
+      .precision(.1);
+
+  // d3.geoZoom()
+  //   .projection(projection)
+  //   (map_canvas.node());
+
+  var path = d3.geoPath()
+    .projection(projection)
+    .context(map_context);
+
+  var shade_path = d3.geoPath()
+    .projection(projection)
+    .context(shade_context);
 
   function plotglobe() {
     var land = topojson.feature(world, world.objects.land);
@@ -105,16 +153,18 @@ d3.json("world-110m.json", function(error, world) {
   //  https://bl.ocks.org/vasturiano/9bdeddb97d5c71f425743442761d5384
   function plotshade(time) {
     shade_context.clearRect(0,0,width,height);
-    var sun = solarPosition(time);
-    var night = d3.geoCircle()
-      .radius(90)
-      .center(antipode(sun))
-    ()
-       
-    shade_context.beginPath();
-    shade_path(night);
-    shade_context.fillStyle = "rgba(0,0,255,0.1)";
-    shade_context.fill();
+    if (control.shade) {
+      var sun = solarPosition(time);
+      var night = d3.geoCircle()
+        .radius(90)
+        .center(antipode(sun))
+      ()
+        
+      shade_context.beginPath();
+      shade_path(night);
+      shade_context.fillStyle = "rgba(0,0,255,0.1)";
+      shade_context.fill();
+    }
   }
 
   plotglobe();
@@ -151,6 +201,8 @@ d3.json("world-110m.json", function(error, world) {
 
     d3.timer(function(elapsed) {
       var time = new Date(now.getTime() + 300*elapsed);
+
+      if (!control.run) return;
 
       if (0) {
          const config = {
@@ -230,9 +282,11 @@ d3.json("world-110m.json", function(error, world) {
     sat_context.arc(xy[0],xy[1],2,0,2*Math.PI);
     sat_context.fill();
 
-    stats_context.font = "9px sans-serif";
-    stats_context.textAlign = "center";
-    //stats_context.fillText(name, xy[0], xy[1]+14);
+    if (control['satellite names']) {
+      stats_context.font = "9px sans-serif";
+      stats_context.textAlign = "center";
+      stats_context.fillText(name, xy[0], xy[1]+14);
+    }
   };
 });
 
