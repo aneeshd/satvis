@@ -30,6 +30,7 @@ const gui = new dat.GUI();
 // };
 var Controls = function() {
   this.run = true;
+  this.speed = 300;
 
   this.shade = true;
   this['satellite names'] = false;
@@ -42,6 +43,7 @@ var control = new Controls();
 
 var f1 = gui.addFolder('Simulation Options');
 f1.add(control, 'run');
+f1.add(control, 'speed');
 f1.open();
 
 var f2 = gui.addFolder('Display Options');
@@ -200,7 +202,7 @@ d3.json("world-110m.json", function(error, world) {
     var now = new Date();
 
     d3.timer(function(elapsed) {
-      var time = new Date(now.getTime() + 300*elapsed);
+      var time = new Date(now.getTime() + control.speed*elapsed);
 
       if (!control.run) return;
 
