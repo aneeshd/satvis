@@ -34,6 +34,7 @@ var Controls = function() {
 
   this.shade = true;
   this['satellite names'] = false;
+  this.FOV = false;
 }
 var control = new Controls();
 // gui.add(controls, 'Volcanoes').onChange(enabled => d3.selectAll('.volcano').style('display', enabled ? null : 'none'));
@@ -50,13 +51,14 @@ var f2 = gui.addFolder('Display Options');
 //f2.add(control, 'names');
 f2.add(control, 'satellite names');
 f2.add(control, 'shade');//.onChange(enabled => d3.selectAll('.urquhart').style('display', enabled ? null : 'none'));
+f2.add(control, 'FOV');
 // f2.add(text, 'growthSpeed');
 // f2.add(text, 'maxSize');
 // f2.add(text, 'message');
 f2.open();
 
-const width = window.innerWidth * 0.9;
-const height = window.innerHeight * 0.9;
+const width = window.innerWidth * 0.8;
+const height = window.innerHeight * 0.8;
 
 var radius = height / 2 - 5,
     scale = radius,
@@ -228,11 +230,12 @@ d3.json("world-110m.json", function(error, world) {
       stats_context.textAlign = "center";
       stats_context.fillText(timeFormat(time),width/2,20);
 
+      plotshade(time);
       stations.forEach(function(d) {
         plotsat(d, time);
       });
 
-      plotshade(time);
+      // plotshade(time);
     });
 
     function plotsat(station, time) {
@@ -272,6 +275,7 @@ d3.json("world-110m.json", function(error, world) {
           velocityEci = positionAndVelocity.velocity;
 
       var positionGd = satellite.eciToGeodetic(positionEci, gmst)
+      station.pos = positionGd;
       drawSat(station, positionGd);
     };
   });
@@ -289,8 +293,57 @@ d3.json("world-110m.json", function(error, world) {
       stats_context.textAlign = "center";
       stats_context.fillText(name, xy[0], xy[1]+14);
     }
+
+    var night = getFootprint(pos);        
+    if (control.FOV) {
+      // var night = getFootprint(pos);        
+      shade_context.beginPath();
+      shade_path(night);
+      shade_context.fillStyle = "rgba(255,0,255,0.01)";
+      shade_context.fill();
+      shade_context.strokeStyle = "rgba(60,60,60,0.1)"
+      shade_context.stroke();
+    }
   };
 });
+
+// https://bl.ocks.org/tuckergordon/raw/ce135a88cd14991761ccdc937179c6c0/
+
+  var RADIANS = Math.PI / 180;
+  var DEGREES = 180 / Math.PI;
+  var R_EARTH = 6378.137; // equatorial radius (km)
+
+  /**
+   * @returns {GeoJSON.Polygon} GeoJSON describing the satellite's current footprint on the Earth
+   */
+   //Satellite.prototype.getFootprint = function () {
+  var getFootprint = function(pos) {
+    var theta = /*this._halfAngle*/ 57 * RADIANS;
+
+    coreAngle = _coreAngle(theta, pos.height, R_EARTH) * DEGREES;
+    //console.log(coreAngle);
+
+    return d3.geoCircle()
+      .center([pos.longitude*180/Math.PI, pos.latitude*180/Math.PI])
+      .radius(coreAngle)();
+  };
+
+  /**
+   * A conical satellite with half angle casts a circle on the Earth. Find the angle
+   * from the center of the earth to the radius of this circle
+   * @param {number} theta: Satellite half angle in radians
+   * @param {number} altitude Satellite altitude
+   * @param {number} r Earth radius
+   * @returns {number} core angle in radians
+   */
+  var _coreAngle = function (theta, altitude, r) {
+    // if FOV is larger than Earth, assume it goes to the tangential point
+    //console.log(altitude);
+    if (Math.sin(theta) > r / (altitude + r)) {
+      return Math.acos(r / (r + altitude));
+    }
+    return Math.abs(Math.asin((r + altitude) * Math.sin(theta) / r)) - theta;
+  };
 
 d3.select(self.frameElement).style("height", height + "px");
 
