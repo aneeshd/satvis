@@ -8,6 +8,10 @@ svg {
   position: absolute;
 }
 
+.overlay {
+  pointer-events:none;
+}
+
 .bar { fill: steelblue; }
 
 .dg .c select {
@@ -18,9 +22,10 @@ svg {
   font-size: 80%;
 }
 
-text.label {
+.chartRow .label {
   font-family: sans-serif;
   font-size: 9px;
+  fill: white;
 }
 </style>
 <body>
@@ -30,7 +35,7 @@ text.label {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-format/1.3.0/d3-format.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/dat-gui/0.6.5/dat.gui.js"></script>
-<script src="//unpkg.com/d3-geo-zoom"></script>
+<script src="https://unpkg.com/d3-geo-zoom@1.3.1"></script>
 <script src="satellite.js"></script>
 <script src="solar-positions.js"></script>
 <script>
@@ -74,6 +79,9 @@ var SPEED_OF_LIGHT = 299792.458; // Speed of light in km/s
 const width = window.innerWidth * 0.9;
 const height = window.innerHeight * 0.9;
 
+// force control gui to be on top of everything else
+d3.select("div.dg.ac").style("z-index", 100);
+
 var graticule = d3.geoGraticule();
 
 var map_canvas = d3.select("body").append("canvas")
@@ -81,14 +89,17 @@ var map_canvas = d3.select("body").append("canvas")
     .attr("height", height);
 
 var sat_canvas = d3.select("body").append("canvas")
+    .attr("class", "overlay")
     .attr("width", width)
     .attr("height", height);
 
 var stats_canvas = d3.select("body").append("canvas")
+    .attr("class", "overlay")
     .attr("width", width)
     .attr("height", height);
 
 var shade_canvas = d3.select("body").append("canvas")
+    .attr("class", "overlay")
     .attr("width", width)
     .attr("height", height);
 
@@ -118,9 +129,11 @@ d3.json("world-110m.json", function(error, world) {
       .translate([width / 2, height / 2])
       .precision(.1);
 
-  // d3.geoZoom()
-  //   .projection(projection)
-  //   (map_canvas.node());
+  d3.geoZoom()
+    .projection(projection)
+    .onMove(() => plotglobe() && sat_context.clearRect(0,0,width,height))
+    .northUp(true)
+    (map_canvas.node());
 
   var path = d3.geoPath()
     .projection(projection)
@@ -197,6 +210,7 @@ d3.json("world-110m.json", function(error, world) {
       var name = 'T_'+terminals.length;
       //console.log(line);
       if (line.lat==undefined || line.lng==undefined) return;
+      if (!line.name) return;
       var t = {
         id: name,
         name: line.name || name,
@@ -437,16 +451,20 @@ d3.json("world-110m.json", function(error, world) {
     }
 
     var name = sat.name;
-    var xy = projection([pos.longitude * DEGREES, pos.latitude * DEGREES]);
+    var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.4;
+    var route = get_satellite_shape(ln, lt, sz, pos.height);
+
     sat_context.fillStyle = pos.height > 1100 ? "red" : "blue";
+    sat_context.strokeStyle = pos.height > 1100 ? "red" : "blue";
+    sat_context.lineWidth = 0.25;
     sat_context.beginPath();
-    sat_context.arc(xy[0],xy[1],2,0,2*Math.PI);
+    sat_path(route);
     sat_context.fill();
     var fov = false;
     if (selected_sats.indexOf(sat)!=-1) {
       sat_context.strokeStyle = "olive";
       sat_context.beginPath();
-      sat_context.arc(xy[0],xy[1],2.2,0,2*Math.PI);
+      sat_path(route);
       sat_context.stroke();
       fov = true;
     }
@@ -476,7 +494,7 @@ d3.json("world-110m.json", function(error, world) {
           continue;
         }
         try {
-          route = {type: "LineString", "coordinates": [
+          var route = {type: "LineString", "coordinates": [
             [s.posGd.longitude * DEGREES, s.posGd.latitude * DEGREES],
             [pos.longitude * DEGREES, pos.latitude * DEGREES]
           ]};
@@ -494,12 +512,14 @@ d3.json("world-110m.json", function(error, world) {
 
   function draw_terminal(trm) {
     var pos = trm.posGd;
-    var xy = projection([pos.longitude * DEGREES, pos.latitude * DEGREES]);
     var r = trm==from_trm ? 6 : trm==to_trm ? 6 : 2;
+
+    var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.2*r;
+    var route = get_terminal_shape(ln, lt, sz, pos.height);
 
     sat_context.fillStyle = "purple";
     sat_context.beginPath();
-    sat_context.arc(xy[0],xy[1],r,0,2*Math.PI);
+    sat_path(route);
     sat_context.fill();
 
     if (control['sat-to-ground']) {
@@ -590,6 +610,7 @@ function setup_graph() {
 	d3.select("body").selectAll("svg").remove()
 
 	var svg = d3.select("body").append("svg")
+      .attr("class", "overlay")
       .attr("width", width + margin.left + margin.right)
       .attr("height", height + margin.top + margin.bottom)
     .append("g")
@@ -730,6 +751,21 @@ function redraw_graph(data) {
   yaxis
       .call(d3.axisLeft(y));
 }
+
+function get_terminal_shape(ln, lt, sz, height) {
+  var route = {
+    type: "LineString", 
+    coordinates: [
+      [ln-sz, lt-sz, height],
+      [ln+sz, lt-sz, height],
+      [ln+sz, lt+sz, height],
+      [ln-sz, lt+sz, height],
+      [ln-sz, lt-sz, height],
+    ]};
+  return route;
+}
+
+var get_satellite_shape = get_terminal_shape;
 
 d3.select(self.frameElement).style("height", height + "px");
 
