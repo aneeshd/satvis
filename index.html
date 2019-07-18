@@ -7,12 +7,28 @@ canvas {
 svg {
   position: absolute;
 }
+
+.bar { fill: steelblue; }
+
+.dg .c select {
+  font-size: 80%;
+}
+
+.dg input[type=text] {
+  font-size: 80%;
+}
+
+text.label {
+  font-family: sans-serif;
+  font-size: 9px;
+}
 </style>
 <body>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/4.13.0/d3.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-geo/1.9.1/d3-geo.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-geo-projection/2.4.0/d3-geo-projection.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-format/1.3.0/d3-format.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/dat-gui/0.6.5/dat.gui.js"></script>
 <script src="//unpkg.com/d3-geo-zoom"></script>
 <script src="satellite.js"></script>
@@ -21,26 +37,21 @@ svg {
 
 // Controls
 const gui = new dat.GUI();
-// const controls = {
-//   'Volcanoes': true,
-//   'Graticule Grid': true,
-//   'Tectonic Plates': true,
-//   'Voronoi Layer': false,
-//   'Shade': true
-// };
+
 var Controls = function() {
   this.run = true;
-  this.speed = 300;
+  this.speed = 3000;
 
   this.shade = true;
   this['satellite names'] = false;
+  this['sat-to-ground'] = true;
+  this['sat-to-sat'] = false;
   this.FOV = false;
+
+  this.from_trm = "undefined";
+  this.to_trm = "undefined";
 }
 var control = new Controls();
-// gui.add(controls, 'Volcanoes').onChange(enabled => d3.selectAll('.volcano').style('display', enabled ? null : 'none'));
-// gui.add(controls, 'Graticule Grid').onChange(enabled => d3.selectAll('.graticule').style('display', enabled ? null : 'none'));
-// gui.add(controls, 'Tectonic Plates').onChange(enabled => d3.selectAll('.plate').style('display', enabled ? null : 'none'));
-// gui.add(controls, 'Voronoi Layer').onChange(enabled => d3.selectAll('.voronoi').style('display', enabled ? null : 'none'));
 
 var f1 = gui.addFolder('Simulation Options');
 f1.add(control, 'run');
@@ -48,28 +59,22 @@ f1.add(control, 'speed');
 f1.open();
 
 var f2 = gui.addFolder('Display Options');
-//f2.add(control, 'names');
 f2.add(control, 'satellite names');
-f2.add(control, 'shade');//.onChange(enabled => d3.selectAll('.urquhart').style('display', enabled ? null : 'none'));
+f2.add(control, 'sat-to-ground');
+f2.add(control, 'sat-to-sat');
+f2.add(control, 'shade');
 f2.add(control, 'FOV');
-// f2.add(text, 'growthSpeed');
-// f2.add(text, 'maxSize');
-// f2.add(text, 'message');
 f2.open();
 
-const width = window.innerWidth * 0.8;
-const height = window.innerHeight * 0.8;
+var RADIANS = Math.PI / 180;
+var DEGREES = 180 / Math.PI;
+var R_EARTH = 6378.137; // equatorial radius (km)
+var SPEED_OF_LIGHT = 299792.458; // Speed of light in km/s
 
-var radius = height / 2 - 5,
-    scale = radius,
-    velocity = .02;
+const width = window.innerWidth * 0.9;
+const height = window.innerHeight * 0.9;
 
 var graticule = d3.geoGraticule();
-
-var svg = d3.select("body").append("svg")
-    .attr("width", width)
-    .attr("height", height);
-var g = svg.append("g");
 
 var map_canvas = d3.select("body").append("canvas")
     .attr("width", width)
@@ -87,18 +92,19 @@ var shade_canvas = d3.select("body").append("canvas")
     .attr("width", width)
     .attr("height", height);
 
-var color = d3.scaleOrdinal()
-  .range(["#9e0142","#d53e4f","#f46d43","#fdae61","#fee08b","#ffffbf","#e6f598","#abdda4","#66c2a5","#3288bd","#5e4fa2"]);
-
 var map_context = map_canvas.node().getContext("2d");
 var sat_context = sat_canvas.node().getContext("2d");
 var stats_context = stats_canvas.node().getContext("2d");
 var shade_context = shade_canvas.node().getContext("2d");
 
 
-var timeFormat = d3.timeFormat("%Y-%m-%d %H:%M");
+var timeFormat = d3.timeFormat("%Y-%m-%d %H:%M:%S");
 
 var stations = [];
+
+var from_trm = undefined;
+var to_trm = undefined;
+var graph_settings = undefined;
 
 d3.json("world-110m.json", function(error, world) {
   if (error) throw error;
@@ -124,6 +130,14 @@ d3.json("world-110m.json", function(error, world) {
     .projection(projection)
     .context(shade_context);
 
+  var sat_path = d3.geoPath()
+    .projection(projection)
+    .context(sat_context);
+
+  var stats_path = d3.geoPath()
+    .projection(projection)
+    .context(stats_context);
+
   function plotglobe() {
     var land = topojson.feature(world, world.objects.land);
 
@@ -140,7 +154,7 @@ d3.json("world-110m.json", function(error, world) {
     map_context.lineWidth = 0.1;
     map_context.stroke();
 
-    map_context.strokeStyle = "#ddd";
+    map_context.strokeStyle = "#eee";
     map_context.beginPath();
     path(graticule());
     map_context.lineWidth = 1;
@@ -162,8 +176,8 @@ d3.json("world-110m.json", function(error, world) {
       var night = d3.geoCircle()
         .radius(90)
         .center(antipode(sun))
-      ()
-        
+      ();
+
       shade_context.beginPath();
       shade_path(night);
       shade_context.fillStyle = "rgba(0,0,255,0.1)";
@@ -173,75 +187,165 @@ d3.json("world-110m.json", function(error, world) {
 
   plotglobe();
 
-  d3.text("satellites.txt", function(error2, data) {
+  // random bit is to avoid caching: https://stackoverflow.com/questions/13053096/avoid-data-caching-when-using-d3-text/13054513
+  terminals = [];
+
+  d3.tsv("terminals.txt"+ '?' + Math.floor(Math.random() * 100000), function(error2, data) {
+    if (error2) throw error2;
+    var lines = data;//.split("\n");
+    lines.forEach(function(line) {
+      // line = line.trim()
+      // if (line.length==0) return;
+      // if (line.charAt(0)=="#") return;
+      // line = line.split(" ");
+      var name = 'T_'+terminals.length;
+      //console.log(line);
+      if (line.lat==undefined || line.lng==undefined) return;
+      var t = {
+        id: name,
+        name: line.name || name,
+        minel: line.minel || 20,
+        posGd: {
+          latitude: +line.lat * RADIANS,
+          longitude: +line.lng * RADIANS,
+          height: 0
+        }
+      };
+      terminals.push(t);
+    });
+
+    var f3 = gui.addFolder("Traffic");
+    f3.add(control, "from_trm", terminals.map(x => x.name)).onChange(function() {
+      from_trm = terminals[terminals.map(x => x.name).indexOf(control.from_trm)];
+    });
+    f3.add(control, "to_trm", terminals.map(x => x.name)).onChange(function() {
+      to_trm = terminals[terminals.map(x => x.name).indexOf(control.to_trm)];
+    });
+    f3.open();
+
+  });
+
+  d3.text("satellites.txt"+ '?' + Math.floor(Math.random() * 100000), function(error2, data) {
     if (error2) throw error2;
 
     stations = [];
 
+    var skip1 = false;
+    var skip2 = false;
+    var lineno = 0;
+
     var lines = data.split("\n");
     lines.forEach(function(line) {
+      lineno += 1;
       if (line.length == 0) return;
+      if (line.charAt(0)=="#") return;
 
-      if (line[0] == "1") {
+      if (!skip1 && line[0] == "1") {
         var obj = stations[stations.length-1];
         obj.tle1 = line;
         return; 
       }
 
-      if (line[0] == "2") {
+      if (!skip2 && line[0] == "2") {
         var obj = stations[stations.length-1];
         obj.tle2 = line;
         obj.satrec = satellite.twoline2satrec(obj.tle1, obj.tle2);
         return; 
       }
       
-      //if (stations.length==12) return;
+      //if (stations.length==11)
+      //if (line.charAt(0)!='P')
+      //if (line.substring(0,4)!='I_01' && line.substring(0,4)!='I_11' && line.substring(0,4)!='I_03' && line.substring(0,4)!='I_13')
+      if (0)
+      {
+        skip1 = true;
+        skip2 = true;
+        return;
+      }
+      skip1 = false;
+      skip2 = false;
+      //console.log(line, line.charAt(0));
       stations.push({
         name: line.trim()
       });
     });
 
+    run();
+  });
+
+  var current_time = new Date().getTime();
+
+  function run() {
+
     var now = new Date();
 
     d3.timer(function(elapsed) {
-      var time = new Date(now.getTime() + control.speed*elapsed);
-
       if (!control.run) return;
 
-      if (0) {
-         const config = {
-                 speed: 0.005,
-                 verticalTilt: -30,
-                 horizontalTilt: 0
-               }
-         projection.rotate([config.speed * elapsed - 120, config.verticalTilt, config.horizontalTilt]);
-         plotglobe();
-      }
-      
+      var time = new Date(current_time+=control.speed); ////new Date(now.getTime() + control.speed*elapsed);
+
       stats_context.clearRect(0,0,width,height);
-      stats_context.globalAlpha = .95;
+      stats_context.globalAlpha = 0.6;//0.95;
       stats_context.drawImage(sat_canvas.node(),0,0);
       sat_context.clearRect(0,0,width,height);
       sat_context.drawImage(stats_canvas.node(),0,0);
 
-      // stats_context.clearRect(0,0,width,height);
       stats_context.font = "bold 14px sans-serif";
       stats_context.fillStyle = "#333";
       stats_context.textAlign = "center";
       stats_context.fillText(timeFormat(time),width/2,20);
 
+      var gmst = satellite.gstimeFromDate(
+          time.getUTCFullYear(),
+          time.getUTCMonth() + 1, // Note, this function requires months in range 1-12.
+          time.getUTCDate(),
+          time.getUTCHours(),
+          time.getUTCMinutes(),
+          time.getUTCSeconds()
+      );
+
       plotshade(time);
+
       stations.forEach(function(d) {
-        plotsat(d, time);
+        update_sat(d, time, gmst);
       });
 
-      // plotshade(time);
+      terminals.forEach(function(d) {
+        update_terminal(d, gmst);
+      });
+
+      stations.forEach(function(d) {
+        update_sat2sat(d);
+      });
+
+      // satellites connected to both terminals
+      var selected_sats = [];
+      if (from_trm!=undefined && to_trm!=undefined) {
+        var s=new Set(from_trm.conn.map(x => x[0]));
+        selected_sats = to_trm.conn.map(x => x[0]).filter(el => s.has(el));
+
+        var fr = new Map( from_trm.conn.map(x => [x[0].name, x[2]]) );
+        var to = new Map( to_trm.conn.map(x => [x[0].name, x[2]]) );
+
+        var data = selected_sats.map(function(s) {
+          return {"sat": s.name, "latency": ((+fr.get(s.name)) + (+to.get(s.name))) / SPEED_OF_LIGHT /* s */};
+        });
+          
+        redraw_graph(data);
+      }
+
+      stations.forEach(function(d) {
+        draw_sat(d, selected_sats);
+      });
+
+      terminals.forEach(function(d) {
+        draw_terminal(d);
+      });
+
     });
 
-    function plotsat(station, time) {
-      var satrec = station.satrec; //satellite.twoline2satrec(station.tle1, station.tle2);
-
-      // increment time by 5 minutes
+    function update_sat(station, time, gmst) {
+      var satrec = station.satrec;
 
       var positionAndVelocity = satellite.propagate(
           satrec,
@@ -260,33 +364,86 @@ d3.json("world-110m.json", function(error, world) {
         return;
       }
 
-      var gmst = satellite.gstimeFromDate(
-          time.getUTCFullYear(),
-          time.getUTCMonth() + 1, // Note, this function requires months in range 1-12.
-          time.getUTCDate(),
-          time.getUTCHours(),
-          time.getUTCMinutes(),
-          time.getUTCSeconds()
-      );
-
       // The position_velocity result is a key-value pair of ECI coordinates.
       // These are the base results from which all other coordinates are derived.
       var positionEci = positionAndVelocity.position,
           velocityEci = positionAndVelocity.velocity;
 
       var positionGd = satellite.eciToGeodetic(positionEci, gmst)
-      station.pos = positionGd;
-      drawSat(station, positionGd);
+      station.posGd = positionGd;
+      station.eci = positionEci;
+      station.ecf = satellite.eciToEcf(positionEci, gmst);
     };
-  });
+  };
 
-  function drawSat(sat, pos) {
+  function update_terminal(trm, gmst) {
+    trm.ecf = satellite.geodeticToEcf(trm.posGd);
+
+    // calculate connectivity to each satellite
+    trm.conn = stations.map(function(sat) {
+      try {
+        return [sat, satellite.ecfToLookAngles(trm.posGd, sat.ecf),  distance3d(sat.ecf, trm.ecf)]
+      } catch(e) {
+        // undefined
+      }
+    })
+    .filter(x => x!=undefined)
+    // filter based on minimum look angle
+    .filter(function(x) {
+      var el = x[1].elevation * DEGREES;
+      var min_el = trm.minel;
+      return (el>=min_el && el<=(180-min_el));
+    })
+    ;
+  }
+
+  function update_sat2sat(sat) {
+    sat.conn = stations.map(function(s) {
+      if (sat==s) return undefined;
+      if (sat==undefined || s==undefined) return undefined;
+      //console.log(sat, s); return;
+      try {
+        var h = sat.posGd.height / s.posGd.height;
+        if (h>1.1 || h<0.8) return undefined; // check
+        return [s, distance3d(sat.ecf, s.ecf)];
+      } catch(e) {
+        // undefined
+      }
+    })
+    .filter(x => x!=undefined)
+    // restrict distance (FIXME: need real criteria)
+    .filter(x => x[1]>1000 && x[1]<5000)
+    // TODO: restrict based on pointing limitations
+    // sort by distance (closest to furthest)
+    .sort((a,b) => a[1]-b[1])
+    ;
+    //console.log(sat.conn);
+  }
+
+  function draw_sat(sat, selected_sats) {
+    var pos = sat.posGd;
+
+    try {
+      pos.longitude
+    }
+    catch (e) {
+      return
+    }
+
     var name = sat.name;
-    var xy = projection([pos.longitude*180/Math.PI, pos.latitude*180/Math.PI]);
-    sat_context.fillStyle = color(name.substring(0,5));
+    var xy = projection([pos.longitude * DEGREES, pos.latitude * DEGREES]);
+    sat_context.fillStyle = pos.height > 1100 ? "red" : "blue";
     sat_context.beginPath();
     sat_context.arc(xy[0],xy[1],2,0,2*Math.PI);
     sat_context.fill();
+    var fov = false;
+    if (selected_sats.indexOf(sat)!=-1) {
+      sat_context.strokeStyle = "olive";
+      sat_context.beginPath();
+      sat_context.arc(xy[0],xy[1],2.2,0,2*Math.PI);
+      sat_context.stroke();
+      fov = true;
+    }
 
     if (control['satellite names']) {
       stats_context.font = "9px sans-serif";
@@ -294,9 +451,8 @@ d3.json("world-110m.json", function(error, world) {
       stats_context.fillText(name, xy[0], xy[1]+14);
     }
 
-    var night = getFootprint(pos);        
-    if (control.FOV) {
-      // var night = getFootprint(pos);        
+    if (control.FOV || fov) {
+      var night = getFootprint(pos);        
       shade_context.beginPath();
       shade_path(night);
       shade_context.fillStyle = "rgba(255,0,255,0.01)";
@@ -304,47 +460,273 @@ d3.json("world-110m.json", function(error, world) {
       shade_context.strokeStyle = "rgba(60,60,60,0.1)"
       shade_context.stroke();
     }
+
+    if (control['sat-to-sat']) {
+      for (i=0; i<4; i++) {
+        try {
+          var s = sat.conn[i][0];
+        } catch(e) {
+          //console.log('error', sat.name, i);
+          continue;
+        }
+        try {
+          route = {type: "LineString", "coordinates": [
+            [s.posGd.longitude * DEGREES, s.posGd.latitude * DEGREES],
+            [pos.longitude * DEGREES, pos.latitude * DEGREES]
+          ]};
+          sat_context.beginPath();
+          sat_context.strokeStyle = "rgba(0,255,0,0.4)";
+          sat_context.lineWidth = 0.25;
+          sat_path(route);
+          sat_context.stroke();
+        } catch(e) {
+          console.log('error', sat.name, s.name, s);
+        }
+      }
+    }
   };
+
+  function draw_terminal(trm) {
+    var pos = trm.posGd;
+    var xy = projection([pos.longitude * DEGREES, pos.latitude * DEGREES]);
+    var r = trm==from_trm ? 6 : trm==to_trm ? 6 : 2;
+
+    sat_context.fillStyle = "purple";
+    sat_context.beginPath();
+    sat_context.arc(xy[0],xy[1],r,0,2*Math.PI);
+    sat_context.fill();
+
+    if (control['sat-to-ground']) {
+      trm.conn.forEach(function(s) {
+        var sat = s[0], lookangles = s[1], dist = s[2];
+        var el = lookangles.elevation * DEGREES;
+        var min_el = trm.minel;
+
+        if ((el>=min_el && el<=(180-min_el))) {
+          var c = stats_context;
+          route = {type: "LineString", "coordinates": [
+            [pos.longitude * DEGREES, pos.latitude * DEGREES],
+            [sat.posGd.longitude * DEGREES, sat.posGd.latitude * DEGREES]
+          ]};
+          if (dist>sat.posGd.height*3) {
+            // too far?
+            c.strokeStyle = "rgba(255,0,0,1)";
+          } else {
+            c.strokeStyle = "rgba(140,140,140,1)";
+          }
+          c.beginPath();
+          stats_path(route);
+          c.stroke();
+        }
+      });
+    }
+  }
 });
+
+function distance3d(p1, p2) {
+  return Math.sqrt( (p1.x-p2.x)**2 + (p1.y-p2.y)**2 + (p1.z-p2.z)**2 );
+}
+
 
 // https://bl.ocks.org/tuckergordon/raw/ce135a88cd14991761ccdc937179c6c0/
 
-  var RADIANS = Math.PI / 180;
-  var DEGREES = 180 / Math.PI;
-  var R_EARTH = 6378.137; // equatorial radius (km)
+/**
+ * @returns {GeoJSON.Polygon} GeoJSON describing the satellite's current footprint on the Earth
+ */
+var getFootprint = function(pos) {
+  var theta = /*this._halfAngle*/ 57 * RADIANS;
 
-  /**
-   * @returns {GeoJSON.Polygon} GeoJSON describing the satellite's current footprint on the Earth
-   */
-   //Satellite.prototype.getFootprint = function () {
-  var getFootprint = function(pos) {
-    var theta = /*this._halfAngle*/ 57 * RADIANS;
+  coreAngle = _coreAngle(theta, pos.height, R_EARTH) * DEGREES;
+  //console.log(coreAngle);
 
-    coreAngle = _coreAngle(theta, pos.height, R_EARTH) * DEGREES;
-    //console.log(coreAngle);
+  return d3.geoCircle()
+    .center([pos.longitude*180/Math.PI, pos.latitude*180/Math.PI])
+    .radius(coreAngle)();
+};
 
-    return d3.geoCircle()
-      .center([pos.longitude*180/Math.PI, pos.latitude*180/Math.PI])
-      .radius(coreAngle)();
-  };
+/**
+ * A conical satellite with half angle casts a circle on the Earth. Find the angle
+ * from the center of the earth to the radius of this circle
+ * @param {number} theta: Satellite half angle in radians
+ * @param {number} altitude Satellite altitude
+ * @param {number} r Earth radius
+ * @returns {number} core angle in radians
+ */
+var _coreAngle = function (theta, altitude, r) {
+  // if FOV is larger than Earth, assume it goes to the tangential point
+  //console.log(altitude);
+  if (Math.sin(theta) > r / (altitude + r)) {
+    return Math.acos(r / (r + altitude));
+  }
+  return Math.abs(Math.asin((r + altitude) * Math.sin(theta) / r)) - theta;
+};
 
-  /**
-   * A conical satellite with half angle casts a circle on the Earth. Find the angle
-   * from the center of the earth to the radius of this circle
-   * @param {number} theta: Satellite half angle in radians
-   * @param {number} altitude Satellite altitude
-   * @param {number} r Earth radius
-   * @returns {number} core angle in radians
-   */
-  var _coreAngle = function (theta, altitude, r) {
-    // if FOV is larger than Earth, assume it goes to the tangential point
-    //console.log(altitude);
-    if (Math.sin(theta) > r / (altitude + r)) {
-      return Math.acos(r / (r + altitude));
-    }
-    return Math.abs(Math.asin((r + altitude) * Math.sin(theta) / r)) - theta;
-  };
+// https://bl.ocks.org/caravinden/eb0e5a2b38c8815919290fa838c6b63b
+// http://bl.ocks.org/charlesdguthrie/11356441
+function setup_graph() {
+
+  // set the dimensions and margins of the graph
+  var margin = {top: 20, right: 20, bottom: 30, left: 50},
+      width = 400 - margin.left - margin.right,
+      height = 300 - margin.top - margin.bottom;
+
+  // set the ranges
+  var y = d3.scaleBand()
+            .range([height, 0])
+            .padding(0.1);
+
+  var x = d3.scaleLinear()
+            .range([0, width]);
+
+  // append the svg object to the body of the page
+  // append a 'group' element to 'svg'
+  // moves the 'group' element to the top left margin
+	d3.select("body").selectAll("svg").remove()
+
+	var svg = d3.select("body").append("svg")
+      .attr("width", width + margin.left + margin.right)
+      .attr("height", height + margin.top + margin.bottom)
+    .append("g")
+      .attr("transform", 
+            "translate(" + margin.left + "," + margin.top + ")");
+
+  // add the x Axis
+  var xaxis = svg.append("g")
+      .attr("transform", "translate(0," + height + ")")
+      .style('font-size', '9px');
+
+  // add the y Axis
+  var yaxis = svg.append("g")
+      .style('font-size', '9px');
+
+  //Package and export settings
+  var settings = {
+	  margin:margin, width:width, height:height,
+	  svg:svg, x:x, y:y, xaxis: xaxis, yaxis: yaxis
+  }
+  
+	return settings;
+}
+
+var mx = 0;
+
+function redraw_graph(data) {
+  if (graph_settings==undefined) return;
+
+  var settings = graph_settings;
+
+  var x = settings.x,
+      y = settings.y,
+      xaxis = settings.xaxis,
+      yaxis = settings.yaxis,
+      margin = settings.margin,
+      svg = settings.svg,
+      height = settings.height,
+      width = settings.width;
+
+  // Scale the range of the data in the domains
+  mx = Math.max((mx || 0), d3.max(data.map(d => d.latency*1000))); // convert to ms
+  x.domain( [0, mx] );
+  // Easier to follow if we don't reorder y
+  //y.domain( data.sort((a,b) => a.latency-b.latency).map(d => d.sat) );
+  y.domain( data.map(d => d.sat) );
+
+  //Bind new data to chart rows 
+
+	//Create chart row and move to below the bottom of the chart
+	var chartRow = svg.selectAll("g.chartRow")
+    .data(data);
+    
+	var newRow = chartRow
+	  .enter()
+      .append("g")
+      .attr("class", "chartRow")
+      .attr("transform", "translate(0," + height + margin.top + margin.bottom + ")");
+
+  // // append the rectangles for the bar chart
+  // svg.selectAll(".bar")
+  //     .data(data)
+  //   .enter().append("rect")
+  //     .attr("class", "bar")
+  //     //.attr("x", function(d) { return x(d.latency); })
+  //     .attr("width", function(d) {return x(d.latency); } )
+  //     .attr("y", function(d) { return y(d.sat); })
+  //     .attr("height", y.bandwidth());
+
+	//Add rectangles
+	newRow.insert("rect")
+	  .attr("class", "bar")
+    .attr("x", 0)
+	  //.attr("opacity", 0)
+	  .attr("opacity", 1)
+	  .attr("height", y.bandwidth())
+	  .attr("width", d => x(d.latency*1000));
+
+  //Add value labels
+	newRow.append("text")
+	  .attr("class", "label")
+	  .attr("y", y.bandwidth()/2)
+	  .attr("x", 0)
+	  //.attr("opacity", 0)
+	  .attr("opacity", 1)
+	  .attr("dy", ".35em")
+	  .attr("dx", "0.5em")
+	  ;//.text(d => d.latency);
+
+	//Update bar widths
+  chartRow.select(".bar")
+    .transition()
+	  .duration(10)
+	  .attr("height", y.bandwidth())
+	  .attr("width", d => x(d.latency*1000))
+	  .attr("opacity", 1);
+
+  //Update data labels
+  chartRow.select(".label")
+    //.update()
+    //.transition()
+	  //.duration(10)
+	  .attr("y", y.bandwidth()/2)
+	  .attr("opacity", 1)
+	  //.tween("text", function(d) { 
+    //   var i = d3.interpolate(+this.textContent.replace(/\,/g,''), +d.latency);
+    //   return function(t) {
+    //     this.textContent = Math.round(i(t));
+    //   };
+    // });
+    .text(d => d3.formatPrefix(".3s", 1e-3)(d.latency)+"s"); // display as ms
+    
+	//Fade out and remove exit elements
+  chartRow.exit()
+    //.transition()
+	  //.style("opacity", "0")
+	  //.attr("transform", "translate(0," + (height + margin.top + margin.bottom) + ")")
+	  .remove();
+
+	//REORDER ROWS
+
+	var delay = function(d, i) { return 200 + i * 30; };
+
+  chartRow.merge(chartRow)
+    .transition()
+		//.delay(delay)
+		//.duration(900)
+		.duration(30)
+		.attr("transform", function(d){ return "translate(0," + y(d.sat) + ")"; });
+    
+
+  // update the x Axis
+  xaxis
+      .attr("transform", "translate(0," + height + ")")
+      .call(d3.axisBottom(x));
+
+  // update the y Axis
+  yaxis
+      .call(d3.axisLeft(y));
+}
 
 d3.select(self.frameElement).style("height", height + "px");
+
+graph_settings = setup_graph();
 
 </script>
