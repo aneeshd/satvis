@@ -192,12 +192,8 @@ d3.json("world-110m.json", function(error, world) {
 
   d3.tsv("terminals.txt"+ '?' + Math.floor(Math.random() * 100000), function(error2, data) {
     if (error2) throw error2;
-    var lines = data;//.split("\n");
-    lines.forEach(function(line) {
-      // line = line.trim()
-      // if (line.length==0) return;
-      // if (line.charAt(0)=="#") return;
-      // line = line.split(" ");
+
+    data.forEach(function(line) {
       var name = 'T_'+terminals.length;
       //console.log(line);
       if (line.lat==undefined || line.lng==undefined) return;
@@ -212,17 +208,27 @@ d3.json("world-110m.json", function(error, world) {
         }
       };
       terminals.push(t);
+      console.log(t.name);
     });
 
     var f3 = gui.addFolder("Traffic");
-    f3.add(control, "from_trm", terminals.map(x => x.name)).onChange(function() {
-      from_trm = terminals[terminals.map(x => x.name).indexOf(control.from_trm)];
+    var trms = terminals.map(x => x.name);
+    trms.unshift('none');
+    f3.add(control, "from_trm", trms).onChange(function() {
+      try {
+        from_trm = terminals[terminals.map(x => x.name).indexOf(control.from_trm)];
+      } catch(e) {
+        from_trm = undefined;
+      }
     });
-    f3.add(control, "to_trm", terminals.map(x => x.name)).onChange(function() {
-      to_trm = terminals[terminals.map(x => x.name).indexOf(control.to_trm)];
+    f3.add(control, "to_trm", trms).onChange(function() {
+      try {
+        to_trm = terminals[terminals.map(x => x.name).indexOf(control.to_trm)];
+      } catch(e) {
+        to_trm = undefined;
+      }
     });
     f3.open();
-
   });
 
   d3.text("satellites.txt"+ '?' + Math.floor(Math.random() * 100000), function(error2, data) {
