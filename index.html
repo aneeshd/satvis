@@ -34,7 +34,8 @@ svg {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-geo-projection/2.4.0/d3-geo-projection.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-format/1.3.0/d3-format.min.js"></script>
-<script src="//cdnjs.cloudflare.com/ajax/libs/dat-gui/0.6.5/dat.gui.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-queue/3.0.7/d3-queue.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.6/dat.gui.min.js"></script>
 <script src="https://unpkg.com/d3-geo-zoom@1.3.1"></script>
 <script src="satellite.js"></script>
 <script src="solar-positions.js"></script>
@@ -43,33 +44,97 @@ svg {
 // Controls
 const gui = new dat.GUI();
 
-var Controls = function() {
-  this.run = true;
-  this.speed = 3000;
+class Controls {
+  constructor() {
+    this.run = true;
+    this.speed = 3000;
+    this.constellation = 'satellites';
+    this.gateways = 'gateways';
+    this.users = 'terminals';
 
-  this.shade = true;
-  this['satellite names'] = false;
-  this['sat-to-ground'] = true;
-  this['sat-to-sat'] = false;
-  this.FOV = false;
+    this.shade = true;
+    this['satellite names'] = false;
+    this['sat-to-ground'] = true;
+    this['sat-to-sat'] = false;
+    this.FOV = false;
 
-  this.from_trm = "undefined";
-  this.to_trm = "undefined";
+    this.from_trm = "undefined";
+    this.to_trm = "undefined";
+    this._from_trm = undefined;
+    this._to_trm = undefined;
+  }
+
+  create_controls() {
+    var f1 = gui.addFolder('Simulation Options');
+    f1.add(this, 'run');
+    f1.add(this, 'speed');
+    f1.add(this, 'constellation', ['satellites', 'oneweb', 'starlink', 'gx']).onChange(
+      () => d3.queue().defer(d3.text, this.constellation + ".txt"+ '?' + Math.floor(Math.random() * 100000))
+                      .await(function(error, satellites) {
+                        if (error) throw error;
+                        load_satellites(satellites);
+                      }));
+
+    // reload both "gateways" and "user terminals" because we don't currently distinguish between the two
+    f1.add(this, 'gateways', ['gateways', 'gx-sas']).onChange(
+      () => d3.queue().defer(d3.tsv, this.gateways + ".txt"+ '?' + Math.floor(Math.random() * 100000))
+                      .defer(d3.tsv, this.users + ".txt"+ '?' + Math.floor(Math.random() * 100000))
+                      .await(function(error, gateways, users) {
+                        if (error) throw error;
+                        load_terminals(gateways.concat(users));
+                      }));
+
+    f1.add(this, 'users', ['terminals']).onChange(
+      () => d3.queue().defer(d3.tsv, this.gateways + ".txt"+ '?' + Math.floor(Math.random() * 100000))
+                      .defer(d3.tsv, this.users + ".txt"+ '?' + Math.floor(Math.random() * 100000))
+                      .await(function(error, gateways, users) {
+                        if (error) throw error;
+                        load_terminals(gateways.concat(users));
+                      }));
+
+    f1.open();
+    this.f1 = f1;
+
+    var f2 = gui.addFolder('Display Options');
+    f2.add(this, 'satellite names');
+    f2.add(this, 'sat-to-ground');
+    f2.add(this, 'sat-to-sat');
+    f2.add(this, 'shade');
+    f2.add(this, 'FOV');
+    f2.open();
+    this.f2 = f2;
+  }
+
+  reload_terminals(terminals) {
+    this.f3 && gui.removeFolder(this.f3);
+
+    this.terminals = terminals;
+
+    var f3 = gui.addFolder("Traffic");
+    var trms = terminals.map(x => x.name);
+    trms.unshift('none');
+    f3.add(this, "from_trm", trms).onChange(function() {
+      var obj = this.object;
+      try {
+        obj._from_trm = obj.terminals[obj.terminals.map(x => x.name).indexOf(obj.from_trm)];
+      } catch(e) {
+        obj._from_trm = undefined;
+      }
+    });
+    f3.add(this, "to_trm", trms).onChange(function() {
+      var obj = this.object;
+      try {
+        obj._to_trm = obj.terminals[obj.terminals.map(x => x.name).indexOf(obj.to_trm)];
+      } catch(e) {
+        obj._to_trm = undefined;
+      }
+    });
+    f3.open();
+    this.f3 = f3;
+  }
 }
+
 var control = new Controls();
-
-var f1 = gui.addFolder('Simulation Options');
-f1.add(control, 'run');
-f1.add(control, 'speed');
-f1.open();
-
-var f2 = gui.addFolder('Display Options');
-f2.add(control, 'satellite names');
-f2.add(control, 'sat-to-ground');
-f2.add(control, 'sat-to-sat');
-f2.add(control, 'shade');
-f2.add(control, 'FOV');
-f2.open();
 
 var RADIANS = Math.PI / 180;
 var DEGREES = 180 / Math.PI;
@@ -77,7 +142,7 @@ var R_EARTH = 6378.137; // equatorial radius (km)
 var SPEED_OF_LIGHT = 299792.458; // Speed of light in km/s
 
 const width = window.innerWidth * 0.9;
-const height = window.innerHeight * 0.9;
+const height = window.innerHeight;// * 0.9;
 
 // force control gui to be on top of everything else
 d3.select("div.dg.ac").style("z-index", 100);
@@ -107,447 +172,404 @@ var map_context = map_canvas.node().getContext("2d");
 var sat_context = sat_canvas.node().getContext("2d");
 var stats_context = stats_canvas.node().getContext("2d");
 var shade_context = shade_canvas.node().getContext("2d");
-
+var sat_path, stats_path, shade_path;
 
 var timeFormat = d3.timeFormat("%Y-%m-%d %H:%M:%S");
 
-var stations = [];
+var satellites = [];
+var terminals = [];
 
-var from_trm = undefined;
-var to_trm = undefined;
 var graph_settings = undefined;
 
-d3.json("world-110m.json", function(error, world) {
-  if (error) throw error;
+var projection;
 
-  var projection = 
+function load_world(world) {
+
+  projection = 
     //d3.geoOrthographic()
     d3.geoProjection(d3.geoMtFlatPolarQuarticRaw)
     //d3.geoProjection(d3.geoKavrayskiy7Raw)
-      //.scale(150)
       .fitSize([width*0.8, height*0.8], topojson.feature(world, world.objects.land))
       .translate([width / 2, height / 2])
       .precision(.1);
 
-  d3.geoZoom()
-    .projection(projection)
-    .onMove(() => plotglobe() && sat_context.clearRect(0,0,width,height))
-    .northUp(true)
-    (map_canvas.node());
-
-  var path = d3.geoPath()
+  var map_path = d3.geoPath()
     .projection(projection)
     .context(map_context);
 
-  var shade_path = d3.geoPath()
+  shade_path = d3.geoPath()
     .projection(projection)
     .context(shade_context);
 
-  var sat_path = d3.geoPath()
+  sat_path = d3.geoPath()
     .projection(projection)
     .context(sat_context);
 
-  var stats_path = d3.geoPath()
+  stats_path = d3.geoPath()
     .projection(projection)
     .context(stats_context);
 
-  function plotglobe() {
-    var land = topojson.feature(world, world.objects.land);
+  d3.geoZoom()
+    .projection(projection)
+    .onMove(() => plotglobe(world, graticule, map_context, map_path) && sat_context.clearRect(0,0,width,height))
+    .northUp(true)
+    (map_canvas.node());
 
-    map_context.clearRect(0,0,width,height);
+  plotglobe(world, graticule, map_context, map_path);
+}
 
-    map_context.fillStyle = "#ccc";
-    map_context.beginPath();
-    path(land);
-    map_context.fill();
+function plotglobe(world, graticule, context, path) {
+  context.clearRect(0,0,width,height);
 
-    map_context.fillStyle = "#555";
-    map_context.beginPath();
-    path(topojson.feature(world, world.objects.countries));
-    map_context.lineWidth = 0.1;
-    map_context.stroke();
+  context.fillStyle = "#ccc";
+  context.beginPath();
+  path(topojson.feature(world, world.objects.land));
+  context.fill();
 
-    map_context.strokeStyle = "#eee";
-    map_context.beginPath();
-    path(graticule());
-    map_context.lineWidth = 1;
-    map_context.stroke();
+  context.strokeStyle = "#aaa";
+  context.beginPath();
+  path(topojson.feature(world, world.objects.countries));
+  context.lineWidth = 1;
+  context.stroke();
 
-    map_context.beginPath();
-    path(graticule.outline());
-    map_context.lineWidth = 1;
-    map_context.stroke();
-  }
+  context.strokeStyle = "#eee";
+  context.beginPath();
+  path(graticule());
+  context.lineWidth = 1;
+  context.stroke();
 
-  // adapted from:
-  //  https://observablehq.com/@mbostock/solar-terminator
-  //  https://bl.ocks.org/vasturiano/9bdeddb97d5c71f425743442761d5384
-  function plotshade(time) {
-    shade_context.clearRect(0,0,width,height);
-    if (control.shade) {
-      var sun = solarPosition(time);
-      var night = d3.geoCircle()
-        .radius(90)
-        .center(antipode(sun))
-      ();
+  context.beginPath();
+  path(graticule.outline());
+  context.lineWidth = 1;
+  context.stroke();
+}
 
-      shade_context.beginPath();
-      shade_path(night);
-      shade_context.fillStyle = "rgba(0,0,255,0.1)";
-      shade_context.fill();
-    }
-  }
-
-  plotglobe();
-
-  // random bit is to avoid caching: https://stackoverflow.com/questions/13053096/avoid-data-caching-when-using-d3-text/13054513
+function load_terminals(data) {
   terminals = [];
-
-  d3.tsv("terminals.txt"+ '?' + Math.floor(Math.random() * 100000), function(error2, data) {
-    if (error2) throw error2;
-
-    data.forEach(function(line) {
-      var name = 'T_'+terminals.length;
-      //console.log(line);
-      if (line.lat==undefined || line.lng==undefined) return;
-      if (!line.name) return;
-      var t = {
-        id: name,
-        name: line.name || name,
-        minel: line.minel || 20,
-        posGd: {
-          latitude: +line.lat * RADIANS,
-          longitude: +line.lng * RADIANS,
-          height: 0
-        }
-      };
-      terminals.push(t);
-      console.log(t.name);
-    });
-
-    var f3 = gui.addFolder("Traffic");
-    var trms = terminals.map(x => x.name);
-    trms.unshift('none');
-    f3.add(control, "from_trm", trms).onChange(function() {
-      try {
-        from_trm = terminals[terminals.map(x => x.name).indexOf(control.from_trm)];
-      } catch(e) {
-        from_trm = undefined;
+  data.forEach(function(line) {
+    var name = 'T_'+terminals.length;
+    //console.log(line);
+    if (line.lat==undefined || line.lng==undefined) return;
+    if (!line.name) return;
+    var t = {
+      id: name,
+      name: line.name || name,
+      minel: line.minel || 20,
+      posGd: {
+        latitude: +line.lat * RADIANS,
+        longitude: +line.lng * RADIANS,
+        height: 0
       }
-    });
-    f3.add(control, "to_trm", trms).onChange(function() {
-      try {
-        to_trm = terminals[terminals.map(x => x.name).indexOf(control.to_trm)];
-      } catch(e) {
-        to_trm = undefined;
-      }
-    });
-    f3.open();
+    };
+    terminals.push(t);
+    //console.log(t.name);
   });
 
-  d3.text("satellites.txt"+ '?' + Math.floor(Math.random() * 100000), function(error2, data) {
-    if (error2) throw error2;
+  control.reload_terminals(terminals);
+}
 
-    stations = [];
+function load_satellites(data) {
+  satellites = [];
 
-    var skip1 = false;
-    var skip2 = false;
-    var lineno = 0;
+  var skip1 = false;
+  var skip2 = false;
+  var lineno = 0;
 
-    var lines = data.split("\n");
-    lines.forEach(function(line) {
-      lineno += 1;
-      if (line.length == 0) return;
-      if (line.charAt(0)=="#") return;
+  var lines = data.split("\n");
+  lines.forEach(function(line) {
+    lineno += 1;
+    if (line.length == 0) return;
+    if (line.charAt(0)=="#") return;
 
-      if (!skip1 && line[0] == "1") {
-        var obj = stations[stations.length-1];
-        obj.tle1 = line;
-        return; 
-      }
+    if (!skip1 && line[0] == "1") {
+      var obj = satellites[satellites.length-1];
+      obj.tle1 = line;
+      return; 
+    }
 
-      if (!skip2 && line[0] == "2") {
-        var obj = stations[stations.length-1];
-        obj.tle2 = line;
-        obj.satrec = satellite.twoline2satrec(obj.tle1, obj.tle2);
-        return; 
-      }
-      
-      //if (stations.length==11)
-      //if (line.charAt(0)!='P')
-      //if (line.substring(0,4)!='I_01' && line.substring(0,4)!='I_11' && line.substring(0,4)!='I_03' && line.substring(0,4)!='I_13')
-      if (0)
-      {
-        skip1 = true;
-        skip2 = true;
-        return;
-      }
-      skip1 = false;
-      skip2 = false;
-      //console.log(line, line.charAt(0));
-      stations.push({
-        name: line.trim()
-      });
+    if (!skip2 && line[0] == "2") {
+      var obj = satellites[satellites.length-1];
+      obj.tle2 = line;
+      obj.satrec = satellite.twoline2satrec(obj.tle1, obj.tle2);
+      return; 
+    }
+    
+    //if (satellites.length==11)
+    //if (line.charAt(0)!='P')
+    //if (line.substring(0,4)!='I_01' && line.substring(0,4)!='I_11' && line.substring(0,4)!='I_03' && line.substring(0,4)!='I_13')
+    if (0)
+    {
+      skip1 = true;
+      skip2 = true;
+      return;
+    }
+    skip1 = false;
+    skip2 = false;
+    //console.log(line, line.charAt(0));
+    satellites.push({
+      name: line.trim()
     });
-
-    run();
   });
+}
 
+function run() {
   var current_time = new Date().getTime();
 
-  function run() {
+  d3.timer(function(elapsed) {
+    if (!control.run) return;
+    var time = new Date(current_time+=control.speed);
+    run_iteration(time);
+  });
+}
 
-    var now = new Date();
+function run_iteration(time) {
+  stats_context.clearRect(0,0,width,height);
+  stats_context.globalAlpha = 0.6;//0.95;
+  stats_context.drawImage(sat_canvas.node(),0,0);
+  sat_context.clearRect(0,0,width,height);
+  sat_context.drawImage(stats_canvas.node(),0,0);
 
-    d3.timer(function(elapsed) {
-      if (!control.run) return;
+  stats_context.font = "bold 14px sans-serif";
+  stats_context.fillStyle = "#333";
+  stats_context.textAlign = "center";
+  stats_context.fillText(timeFormat(time),width/2,20);
 
-      var time = new Date(current_time+=control.speed); ////new Date(now.getTime() + control.speed*elapsed);
+  var gmst = satellite.gstimeFromDate(
+      time.getUTCFullYear(),
+      time.getUTCMonth() + 1, // Note, this function requires months in range 1-12.
+      time.getUTCDate(),
+      time.getUTCHours(),
+      time.getUTCMinutes(),
+      time.getUTCSeconds()
+  );
 
-      stats_context.clearRect(0,0,width,height);
-      stats_context.globalAlpha = 0.6;//0.95;
-      stats_context.drawImage(sat_canvas.node(),0,0);
-      sat_context.clearRect(0,0,width,height);
-      sat_context.drawImage(stats_canvas.node(),0,0);
+  satellites.forEach(function(d) {
+    update_sat(d, time, gmst);
+  });
 
-      stats_context.font = "bold 14px sans-serif";
-      stats_context.fillStyle = "#333";
-      stats_context.textAlign = "center";
-      stats_context.fillText(timeFormat(time),width/2,20);
+  terminals.forEach(function(d) {
+    update_terminal(d, gmst);
+  });
 
-      var gmst = satellite.gstimeFromDate(
-          time.getUTCFullYear(),
-          time.getUTCMonth() + 1, // Note, this function requires months in range 1-12.
-          time.getUTCDate(),
-          time.getUTCHours(),
-          time.getUTCMinutes(),
-          time.getUTCSeconds()
-      );
+  satellites.forEach(function(d) {
+    update_sat2sat(d);
+  });
 
-      plotshade(time);
+  // satellites connected to both terminals
+  var selected_sats = [];
+  if (control._from_trm!=undefined && control._to_trm!=undefined) {
+    var s=new Set(control._from_trm.conn.map(x => x[0]));
+    selected_sats = control._to_trm.conn.map(x => x[0]).filter(el => s.has(el));
 
-      stations.forEach(function(d) {
-        update_sat(d, time, gmst);
-      });
+    var fr = new Map( control._from_trm.conn.map(x => [x[0].name, x[2]]) );
+    var to = new Map( control._to_trm.conn.map(x => [x[0].name, x[2]]) );
 
-      terminals.forEach(function(d) {
-        update_terminal(d, gmst);
-      });
-
-      stations.forEach(function(d) {
-        update_sat2sat(d);
-      });
-
-      // satellites connected to both terminals
-      var selected_sats = [];
-      if (from_trm!=undefined && to_trm!=undefined) {
-        var s=new Set(from_trm.conn.map(x => x[0]));
-        selected_sats = to_trm.conn.map(x => x[0]).filter(el => s.has(el));
-
-        var fr = new Map( from_trm.conn.map(x => [x[0].name, x[2]]) );
-        var to = new Map( to_trm.conn.map(x => [x[0].name, x[2]]) );
-
-        var data = selected_sats.map(function(s) {
-          return {"sat": s.name, "latency": ((+fr.get(s.name)) + (+to.get(s.name))) / SPEED_OF_LIGHT /* s */};
-        });
-          
-        redraw_graph(data);
-      }
-
-      stations.forEach(function(d) {
-        draw_sat(d, selected_sats);
-      });
-
-      terminals.forEach(function(d) {
-        draw_terminal(d);
-      });
-
+    var data = selected_sats.map(function(s) {
+      return {"sat": s.name, "latency": ((+fr.get(s.name)) + (+to.get(s.name))) / SPEED_OF_LIGHT /* s */};
     });
-
-    function update_sat(station, time, gmst) {
-      var satrec = station.satrec;
-
-      var positionAndVelocity = satellite.propagate(
-          satrec,
-          time.getUTCFullYear(),
-          time.getUTCMonth() + 1, // Note, this function requires months in range 1-12.
-          time.getUTCDate(),
-          time.getUTCHours(),
-          time.getUTCMinutes(),
-          time.getUTCSeconds()
-      );
-
-      if (!positionAndVelocity.position) {
-        if (time.getTime() - now.getTime() > 1000) return;
-        console.log("No position data for:");
-        console.log(station, satrec);
-        return;
-      }
-
-      // The position_velocity result is a key-value pair of ECI coordinates.
-      // These are the base results from which all other coordinates are derived.
-      var positionEci = positionAndVelocity.position,
-          velocityEci = positionAndVelocity.velocity;
-
-      var positionGd = satellite.eciToGeodetic(positionEci, gmst)
-      station.posGd = positionGd;
-      station.eci = positionEci;
-      station.ecf = satellite.eciToEcf(positionEci, gmst);
-    };
-  };
-
-  function update_terminal(trm, gmst) {
-    trm.ecf = satellite.geodeticToEcf(trm.posGd);
-
-    // calculate connectivity to each satellite
-    trm.conn = stations.map(function(sat) {
-      try {
-        return [sat, satellite.ecfToLookAngles(trm.posGd, sat.ecf),  distance3d(sat.ecf, trm.ecf)]
-      } catch(e) {
-        // undefined
-      }
-    })
-    .filter(x => x!=undefined)
-    // filter based on minimum look angle
-    .filter(function(x) {
-      var el = x[1].elevation * DEGREES;
-      var min_el = trm.minel;
-      return (el>=min_el && el<=(180-min_el));
-    })
-    ;
+      
+    redraw_graph(data);
   }
 
-  function update_sat2sat(sat) {
-    sat.conn = stations.map(function(s) {
-      if (sat==s) return undefined;
-      if (sat==undefined || s==undefined) return undefined;
-      //console.log(sat, s); return;
-      try {
-        var h = sat.posGd.height / s.posGd.height;
-        if (h>1.1 || h<0.8) return undefined; // check
-        return [s, distance3d(sat.ecf, s.ecf)];
-      } catch(e) {
-        // undefined
-      }
-    })
-    .filter(x => x!=undefined)
-    // restrict distance (FIXME: need real criteria)
-    .filter(x => x[1]>1000 && x[1]<5000)
-    // TODO: restrict based on pointing limitations
-    // sort by distance (closest to furthest)
-    .sort((a,b) => a[1]-b[1])
-    ;
-    //console.log(sat.conn);
+  plotshade(time, shade_context, shade_path);
+
+  satellites.forEach(function(d) {
+    draw_sat(d, selected_sats);
+  });
+
+  terminals.forEach(function(d) {
+    draw_terminal(d, selected_sats);
+  });
+};
+
+function update_sat(sat, time, gmst) {
+  var satrec = sat.satrec;
+
+  var positionAndVelocity = satellite.propagate(
+      satrec,
+      time.getUTCFullYear(),
+      time.getUTCMonth() + 1, // Note, this function requires months in range 1-12.
+      time.getUTCDate(),
+      time.getUTCHours(),
+      time.getUTCMinutes(),
+      time.getUTCSeconds()
+  );
+
+  if (!positionAndVelocity.position) {
+    var now = new Date();
+    if (time.getTime() - now.getTime() > 1000) return;
+    console.log("No position data for:");
+    console.log(sat, satrec);
+    return;
   }
 
-  function draw_sat(sat, selected_sats) {
-    var pos = sat.posGd;
+  // The position_velocity result is a key-value pair of ECI coordinates.
+  // These are the base results from which all other coordinates are derived.
+  var positionEci = positionAndVelocity.position,
+      velocityEci = positionAndVelocity.velocity;
 
+  var positionGd = satellite.eciToGeodetic(positionEci, gmst)
+  sat.posGd = positionGd;
+  sat.eci = positionEci;
+  sat.ecf = satellite.eciToEcf(positionEci, gmst);
+};
+
+function update_terminal(trm, gmst) {
+  trm.ecf = satellite.geodeticToEcf(trm.posGd);
+
+  // calculate connectivity to each satellite
+  trm.conn = satellites.map(function(sat) {
     try {
-      pos.longitude
+      return [sat, satellite.ecfToLookAngles(trm.posGd, sat.ecf),  distance3d(sat.ecf, trm.ecf)]
+    } catch(e) {
+      // undefined
     }
-    catch (e) {
-      return
+  })
+  .filter(x => x!=undefined)
+  // filter based on minimum look angle
+  .filter(function(x) {
+    var el = x[1].elevation * DEGREES;
+    var min_el = trm.minel;
+    return (el>=min_el && el<=(180-min_el));
+  })
+  ;
+}
+
+function update_sat2sat(sat) {
+  sat.conn = satellites.map(function(s) {
+    if (sat==s) return undefined;
+    if (sat==undefined || s==undefined) return undefined;
+    //console.log(sat, s); return;
+    try {
+      var h = sat.posGd.height / s.posGd.height;
+      if (h>1.1 || h<0.8) return undefined; // check
+      return [s, distance3d(sat.ecf, s.ecf)];
+    } catch(e) {
+      // undefined
     }
+  })
+  .filter(x => x!=undefined)
+  // restrict distance (FIXME: need real criteria)
+  .filter(x => x[1]>1000 && x[1]<5000)
+  // TODO: restrict based on pointing limitations
+  // sort by distance (closest to furthest)
+  .sort((a,b) => a[1]-b[1])
+  ;
+  //console.log(sat.conn);
+}
 
-    var name = sat.name;
-    var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.4;
-    var route = get_satellite_shape(ln, lt, sz, pos.height);
+function draw_sat(sat, selected_sats) {
+  var pos = sat.posGd;
 
-    sat_context.fillStyle = pos.height > 1100 ? "red" : "blue";
-    sat_context.strokeStyle = pos.height > 1100 ? "red" : "blue";
-    sat_context.lineWidth = 0.25;
-    sat_context.beginPath();
-    sat_path(route);
-    sat_context.fill();
-    var fov = false;
-    if (selected_sats.indexOf(sat)!=-1) {
-      sat_context.strokeStyle = "olive";
-      sat_context.beginPath();
-      sat_path(route);
-      sat_context.stroke();
-      fov = true;
-    }
+  try {
+    pos.longitude
+  }
+  catch (e) {
+    return
+  }
 
-    if (control['satellite names']) {
-      stats_context.font = "9px sans-serif";
-      stats_context.textAlign = "center";
-      stats_context.fillText(name, xy[0], xy[1]+14);
-    }
+  var name = sat.name;
+  var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.4;
+  var route = get_satellite_shape(ln, lt, sz, pos.height);
+  var fov = false;
 
-    if (control.FOV || fov) {
-      var night = getFootprint(pos);        
-      shade_context.beginPath();
-      shade_path(night);
-      shade_context.fillStyle = "rgba(255,0,255,0.01)";
-      shade_context.fill();
-      shade_context.strokeStyle = "rgba(60,60,60,0.1)"
-      shade_context.stroke();
-    }
+  sat_context.fillStyle = pos.height > 1100 ? "red" : "blue";
+  sat_context.strokeStyle = pos.height > 1100 ? "red" : "blue";
+  if (selected_sats.indexOf(sat)!=-1) {
+    sat_context.fillStyle = "olive";
+    sat_context.strokeStyle = "olive";
+    fov = true;
+  }
+  sat_context.lineWidth = 0.25;
+  sat_context.beginPath();
+  sat_path(route);
+  sat_context.fill();
 
-    if (control['sat-to-sat']) {
-      for (i=0; i<4; i++) {
-        try {
-          var s = sat.conn[i][0];
-        } catch(e) {
-          //console.log('error', sat.name, i);
-          continue;
-        }
-        try {
-          var route = {type: "LineString", "coordinates": [
-            [s.posGd.longitude * DEGREES, s.posGd.latitude * DEGREES],
-            [pos.longitude * DEGREES, pos.latitude * DEGREES]
-          ]};
-          sat_context.beginPath();
-          sat_context.strokeStyle = "rgba(0,255,0,0.4)";
-          sat_context.lineWidth = 0.25;
-          sat_path(route);
-          sat_context.stroke();
-        } catch(e) {
-          console.log('error', sat.name, s.name, s);
-        }
+  if (control['satellite names']) {
+    // FIXME does not respect geo projection if hidden
+    var xy = projection([ln, lt]);
+    stats_context.font = "9px sans-serif";
+    stats_context.textAlign = "center";
+    stats_context.fillText(name, xy[0], xy[1]+14);
+  }
+
+  if (control.FOV || fov) {
+    var night = getFootprint(pos);        
+    shade_context.beginPath();
+    shade_path(night);
+    shade_context.fillStyle = "rgba(255,0,255,0.01)";
+    shade_context.fill();
+    shade_context.strokeStyle = "rgba(60,60,60,0.1)"
+    shade_context.stroke();
+  }
+
+  if (control['sat-to-sat']) {
+    for (i=0; i<4; i++) {
+      try {
+        var s = sat.conn[i][0];
+      } catch(e) {
+        //console.log('error', sat.name, i);
+        continue;
+      }
+      try {
+        var route = {type: "LineString", "coordinates": [
+          [s.posGd.longitude * DEGREES, s.posGd.latitude * DEGREES],
+          [pos.longitude * DEGREES, pos.latitude * DEGREES]
+        ]};
+        sat_context.beginPath();
+        sat_context.strokeStyle = "rgba(0,255,0,0.4)";
+        sat_context.lineWidth = 0.25;
+        sat_path(route);
+        sat_context.stroke();
+      } catch(e) {
+        console.log('error', sat.name, s.name, s);
       }
     }
-  };
-
-  function draw_terminal(trm) {
-    var pos = trm.posGd;
-    var r = trm==from_trm ? 6 : trm==to_trm ? 6 : 2;
-
-    var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.2*r;
-    var route = get_terminal_shape(ln, lt, sz, pos.height);
-
-    sat_context.fillStyle = "purple";
-    sat_context.beginPath();
-    sat_path(route);
-    sat_context.fill();
-
-    if (control['sat-to-ground']) {
-      trm.conn.forEach(function(s) {
-        var sat = s[0], lookangles = s[1], dist = s[2];
-        var el = lookangles.elevation * DEGREES;
-        var min_el = trm.minel;
-
-        if ((el>=min_el && el<=(180-min_el))) {
-          var c = stats_context;
-          route = {type: "LineString", "coordinates": [
-            [pos.longitude * DEGREES, pos.latitude * DEGREES],
-            [sat.posGd.longitude * DEGREES, sat.posGd.latitude * DEGREES]
-          ]};
-          if (dist>sat.posGd.height*3) {
-            // too far?
-            c.strokeStyle = "rgba(255,0,0,1)";
-          } else {
-            c.strokeStyle = "rgba(140,140,140,1)";
-          }
-          c.beginPath();
-          stats_path(route);
-          c.stroke();
-        }
-      });
-    }
   }
-});
+};
+
+function draw_terminal(trm, selected_sats) {
+  var pos = trm.posGd;
+  var r = trm==control._from_trm ? 6 : trm==control._to_trm ? 6 : 2;
+
+  var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.2*r;
+  var route = get_terminal_shape(ln, lt, sz, pos.height);
+
+  sat_context.fillStyle = "purple";
+  sat_context.beginPath();
+  sat_path(route);
+  sat_context.fill();
+
+  if (control['sat-to-ground']) {
+    trm.conn.forEach(function(s) {
+      var sat = s[0], lookangles = s[1], dist = s[2];
+      var el = lookangles.elevation * DEGREES;
+      var min_el = trm.minel;
+
+      if ((el>=min_el && el<=(180-min_el))) {
+        var c = stats_context;
+        route = {type: "LineString", "coordinates": [
+          [pos.longitude * DEGREES, pos.latitude * DEGREES],
+          [sat.posGd.longitude * DEGREES, sat.posGd.latitude * DEGREES]
+        ]};
+        if (dist>sat.posGd.height*3) {
+          // too far?
+          c.strokeStyle = "rgba(255,0,0,1)";
+        } else {
+          c.strokeStyle = "rgba(140,140,140,1)";
+        }
+        if (selected_sats.indexOf(sat)!=-1 && (trm==control._from_trm || trm==control._to_trm)) {
+          c.lineWidth = 10;
+        } else {
+          c.lineWidth = 1;
+        }
+        c.beginPath();
+        stats_path(route);
+        c.stroke();
+      }
+    });
+  }
+}
 
 function distance3d(p1, p2) {
   return Math.sqrt( (p1.x-p2.x)**2 + (p1.y-p2.y)**2 + (p1.z-p2.z)**2 );
@@ -559,7 +581,7 @@ function distance3d(p1, p2) {
 /**
  * @returns {GeoJSON.Polygon} GeoJSON describing the satellite's current footprint on the Earth
  */
-var getFootprint = function(pos) {
+function getFootprint(pos) {
   var theta = /*this._halfAngle*/ 57 * RADIANS;
 
   coreAngle = _coreAngle(theta, pos.height, R_EARTH) * DEGREES;
@@ -578,7 +600,7 @@ var getFootprint = function(pos) {
  * @param {number} r Earth radius
  * @returns {number} core angle in radians
  */
-var _coreAngle = function (theta, altitude, r) {
+function _coreAngle(theta, altitude, r) {
   // if FOV is larger than Earth, assume it goes to the tangential point
   //console.log(altitude);
   if (Math.sin(theta) > r / (altitude + r)) {
@@ -752,6 +774,25 @@ function redraw_graph(data) {
       .call(d3.axisLeft(y));
 }
 
+// adapted from:
+//  https://observablehq.com/@mbostock/solar-terminator
+//  https://bl.ocks.org/vasturiano/9bdeddb97d5c71f425743442761d5384
+function plotshade(time, context, path) {
+  context.clearRect(0,0,width,height);
+  if (control.shade) {
+    var sun = solarPosition(time);
+    var night = d3.geoCircle()
+      .radius(90)
+      .center(antipode(sun))
+    ();
+
+    context.beginPath();
+    path(night);
+    context.fillStyle = "rgba(0,0,255,0.1)";
+    context.fill();
+  }
+}
+
 function get_terminal_shape(ln, lt, sz, height) {
   var route = {
     type: "LineString", 
@@ -765,10 +806,27 @@ function get_terminal_shape(ln, lt, sz, height) {
   return route;
 }
 
-var get_satellite_shape = get_terminal_shape;
+function get_satellite_shape(ln, lt, sz, height) {
+  return get_terminal_shape(ln, lt, sz, height);
+}
 
 d3.select(self.frameElement).style("height", height + "px");
 
 graph_settings = setup_graph();
+
+// random bit is to avoid caching: https://stackoverflow.com/questions/13053096/avoid-data-caching-when-using-d3-text/13054513
+d3.queue()
+  .defer(d3.json, "world-110m.json")
+  .defer(d3.tsv, "gateways.txt"+ '?' + Math.floor(Math.random() * 100000))
+  .defer(d3.tsv, "terminals.txt"+ '?' + Math.floor(Math.random() * 100000))
+  .defer(d3.text, "satellites.txt"+ '?' + Math.floor(Math.random() * 100000))
+  .await(function(error, world, gateways, terminals, satellites) {
+    if (error) throw error;
+    load_world(world);
+    control.create_controls();
+    load_terminals(gateways.concat(terminals));
+    load_satellites(satellites);
+    run();
+  });
 
 </script>
