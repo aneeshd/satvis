@@ -816,7 +816,8 @@ graph_settings = setup_graph();
 
 // random bit is to avoid caching: https://stackoverflow.com/questions/13053096/avoid-data-caching-when-using-d3-text/13054513
 d3.queue()
-  .defer(d3.json, "world-110m.json")
+  // slow: .defer(d3.json, "https://raw.githubusercontent.com/d3/d3.github.com/master/world-50m.v1.json")
+  .defer(d3.json, "https://raw.githubusercontent.com/d3/d3.github.com/master/world-110m.v1.json")
   .defer(d3.tsv, "gateways.txt"+ '?' + Math.floor(Math.random() * 100000))
   .defer(d3.tsv, "terminals.txt"+ '?' + Math.floor(Math.random() * 100000))
   .defer(d3.text, "satellites.txt"+ '?' + Math.floor(Math.random() * 100000))
