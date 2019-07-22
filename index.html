@@ -12,7 +12,9 @@ svg {
   pointer-events:none;
 }
 
-.bar { fill: steelblue; }
+.active { fill: steelblue; }
+.inactive { fill: burlywood; }
+.range { fill: rgb(161,191,217); }
 
 .dg .c select {
   font-size: 80%;
@@ -57,6 +59,9 @@ class Controls {
     this['sat-to-ground'] = true;
     this['sat-to-sat'] = false;
     this.FOV = false;
+    this.altitude_threshold = 1100;
+    this['low-altitude'] = true;
+    this['high-altitude'] = true;
 
     this.from_trm = "undefined";
     this.to_trm = "undefined";
@@ -100,7 +105,10 @@ class Controls {
     f2.add(this, 'sat-to-ground');
     f2.add(this, 'sat-to-sat');
     f2.add(this, 'shade');
-    f2.add(this, 'FOV');
+    // f2.add(this, 'FOV');
+    // f2.add(this, 'altitude_threshold');
+    // f2.add(this, 'low-altitude');//.onChange(enabled => d3.selectAll('.lowaltitude').style('display', enabled ? null : 'none'));
+    // f2.add(this, 'high-altitude');//.onChange(enabled => d3.selectAll('.highaltitude').style('display', enabled ? null : 'none'));
     f2.open();
     this.f2 = f2;
   }
@@ -120,6 +128,11 @@ class Controls {
       } catch(e) {
         obj._from_trm = undefined;
       }
+      if (obj._from_trm!=undefined && obj._to_trm!=undefined) {
+        obj.conntrack = new ConnTrack(obj._from_trm, obj._to_trm);
+      } else {
+        obj.conntrack = undefined;
+      }
     });
     f3.add(this, "to_trm", trms).onChange(function() {
       var obj = this.object;
@@ -127,6 +140,11 @@ class Controls {
         obj._to_trm = obj.terminals[obj.terminals.map(x => x.name).indexOf(obj.to_trm)];
       } catch(e) {
         obj._to_trm = undefined;
+      }
+      if (obj._from_trm!=undefined && obj._to_trm!=undefined) {
+        obj.conntrack = new ConnTrack(obj._from_trm, obj._to_trm);
+      } else {
+        obj.conntrack = undefined;
       }
     });
     f3.open();
@@ -355,20 +373,12 @@ function run_iteration(time) {
     update_sat2sat(d);
   });
 
-  // satellites connected to both terminals
+  // selected_sats: satellites connected to terminals being probed
   var selected_sats = [];
-  if (control._from_trm!=undefined && control._to_trm!=undefined) {
-    var s=new Set(control._from_trm.conn.map(x => x[0]));
-    selected_sats = control._to_trm.conn.map(x => x[0]).filter(el => s.has(el));
-
-    var fr = new Map( control._from_trm.conn.map(x => [x[0].name, x[2]]) );
-    var to = new Map( control._to_trm.conn.map(x => [x[0].name, x[2]]) );
-
-    var data = selected_sats.map(function(s) {
-      return {"sat": s.name, "latency": ((+fr.get(s.name)) + (+to.get(s.name))) / SPEED_OF_LIGHT /* s */};
-    });
-      
-    redraw_graph(data);
+  if (control.conntrack != undefined) {
+    control.conntrack.update(time);
+    selected_sats = control.conntrack.selected_sats;
+    redraw_graph(control.conntrack.conns);
   }
 
   plotshade(time, shade_context, shade_path);
@@ -381,6 +391,64 @@ function run_iteration(time) {
     draw_terminal(d, selected_sats);
   });
 };
+
+class ConnTrack {
+  constructor(gw, trm) {
+    this.gw = gw;
+    this.trm = trm;
+    this.conns = new Map();
+  }
+
+  update(time) {
+    var gw_conns = this.gw.conn, trm_conns = this.trm.conn;
+
+    var s = new Set(gw_conns.map(x => x[0]));
+    var selected_sats = trm_conns.map(x => x[0]).filter(el => s.has(el));
+
+    var fr = new Map( gw_conns.map(x => [x[0].name, [x[1], x[2]]]) );
+    var to = new Map( trm_conns.map(x => [x[0].name, [x[1], x[2]]]) );
+
+    var conns = this.conns;
+
+    var data = new Map( selected_sats.map(function(s) {
+      var ret = [s.name, {"latency": ((+fr.get(s.name)[1]) + (+to.get(s.name)[1])) / SPEED_OF_LIGHT /* s */}];
+      if (!conns.has(s.name)) {
+        ret[1].first_seen = time;
+        ret[1].initial_latency = ret[1].latency;
+        ret[1].min_latency = ret[1].latency;
+        ret[1].max_latency = ret[1].latency;
+      }
+      return ret;
+    }) );
+
+    this.selected_sats = selected_sats;
+
+    for (const satname of data.keys()) {
+      var src = data.get(satname);
+      var dst = this.conns.has(satname) ? this.conns.get(satname) : (this.conns.set(satname, {}), this.conns.get(satname));
+      for (const key in src) {
+        dst[key] = src[key];
+      }
+    }
+    for (const satname of this.conns.keys()) {
+      var s = this.conns.get(satname);
+      if (data.has(satname)) {
+        s.active = true;
+        s.inactive_count = 0;
+        s.min_latency = Math.min(s.min_latency, s.latency);
+        s.max_latency = Math.max(s.max_latency, s.latency);
+        s.last_seen = time;
+      } else {
+        s.active = false;
+        s.inactive_count += 1;
+        if (s.inactive_count==100) {
+          this.conns.delete(satname);
+        }
+      }
+    }
+    // console.log(this.conns);
+  }
+}
 
 function update_sat(sat, time, gmst) {
   var satrec = sat.satrec;
@@ -471,21 +539,21 @@ function draw_sat(sat, selected_sats) {
   var name = sat.name;
   var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.4;
   var route = get_satellite_shape(ln, lt, sz, pos.height);
-  var fov = false;
+  var detail = false;
 
-  sat_context.fillStyle = pos.height > 1100 ? "red" : "blue";
-  sat_context.strokeStyle = pos.height > 1100 ? "red" : "blue";
+  sat_context.fillStyle = pos.height > control.altitude_threshold ? "red" : "blue";
+  sat_context.strokeStyle = pos.height > control.altitude_threshold ? "red" : "blue";
   if (selected_sats.indexOf(sat)!=-1) {
     sat_context.fillStyle = "olive";
     sat_context.strokeStyle = "olive";
-    fov = true;
+    detail = true;
   }
   sat_context.lineWidth = 0.25;
   sat_context.beginPath();
   sat_path(route);
   sat_context.fill();
 
-  if (control['satellite names']) {
+  if (control['satellite names'] || detail) {
     // FIXME does not respect geo projection if hidden
     var xy = projection([ln, lt]);
     stats_context.font = "9px sans-serif";
@@ -493,7 +561,7 @@ function draw_sat(sat, selected_sats) {
     stats_context.fillText(name, xy[0], xy[1]+14);
   }
 
-  if (control.FOV || fov) {
+  if (control.FOV || detail) {
     var night = getFootprint(pos);        
     shade_context.beginPath();
     shade_path(night);
@@ -513,11 +581,15 @@ function draw_sat(sat, selected_sats) {
       }
       try {
         var route = {type: "LineString", "coordinates": [
-          [s.posGd.longitude * DEGREES, s.posGd.latitude * DEGREES],
-          [pos.longitude * DEGREES, pos.latitude * DEGREES]
+          [s.posGd.longitude * DEGREES, s.posGd.latitude * DEGREES, s.posGd.height],
+          [pos.longitude * DEGREES, pos.latitude * DEGREES, pos.height]
         ]};
         sat_context.beginPath();
-        sat_context.strokeStyle = "rgba(0,255,0,0.4)";
+        if (pos.height > control.altitude_threshold) {
+          sat_context.strokeStyle = "rgba(0,0,255,0.4)";
+        } else {
+          sat_context.strokeStyle = "rgba(0,255,0,0.4)";
+        }
         sat_context.lineWidth = 0.25;
         sat_path(route);
         sat_context.stroke();
@@ -585,10 +657,9 @@ function getFootprint(pos) {
   var theta = /*this._halfAngle*/ 57 * RADIANS;
 
   coreAngle = _coreAngle(theta, pos.height, R_EARTH) * DEGREES;
-  //console.log(coreAngle);
 
   return d3.geoCircle()
-    .center([pos.longitude*180/Math.PI, pos.latitude*180/Math.PI])
+    .center([pos.longitude * DEGREES, pos.latitude * DEGREES])
     .radius(coreAngle)();
 };
 
@@ -602,7 +673,6 @@ function getFootprint(pos) {
  */
 function _coreAngle(theta, altitude, r) {
   // if FOV is larger than Earth, assume it goes to the tangential point
-  //console.log(altitude);
   if (Math.sin(theta) > r / (altitude + r)) {
     return Math.acos(r / (r + altitude));
   }
@@ -659,8 +729,16 @@ function setup_graph() {
 
 var mx = 0;
 
-function redraw_graph(data) {
+function redraw_graph(data_map) {
   if (graph_settings==undefined) return;
+
+  // temp
+  var data = [];
+  for (x of data_map.entries()) {
+    y = x[1];
+    y.sat = x[0];
+    data.push(y);
+  }
 
   var settings = graph_settings;
 
@@ -677,8 +755,8 @@ function redraw_graph(data) {
   mx = Math.max((mx || 0), d3.max(data.map(d => d.latency*1000))); // convert to ms
   x.domain( [0, mx] );
   // Easier to follow if we don't reorder y
-  //y.domain( data.sort((a,b) => a.latency-b.latency).map(d => d.sat) );
-  y.domain( data.map(d => d.sat) );
+  y.domain( data.sort((a,b) => a.first_seen-b.first_seen).map(d => d.sat) );
+  //y.domain( data.map(d => d.sat) );
 
   //Bind new data to chart rows 
 
@@ -711,6 +789,15 @@ function redraw_graph(data) {
 	  .attr("height", y.bandwidth())
 	  .attr("width", d => x(d.latency*1000));
 
+  // min/max latency
+  newRow.insert("rect")
+	  .attr("class", "range")
+    .attr("x", d => x(d.min_latency*1000))
+	  //.attr("opacity", 0)
+	  .attr("opacity", 1)
+	  .attr("height", 5)
+	  .attr("width", d => x((d.max_latency-d.min_latency)*1000));
+
   //Add value labels
 	newRow.append("text")
 	  .attr("class", "label")
@@ -725,10 +812,21 @@ function redraw_graph(data) {
 	//Update bar widths
   chartRow.select(".bar")
     .transition()
-	  .duration(10)
+    .duration(10)
+    .attr("class", d => d.active ? "bar active" : "bar inactive")
 	  .attr("height", y.bandwidth())
 	  .attr("width", d => x(d.latency*1000))
 	  .attr("opacity", 1);
+
+  // min/max latency
+  chartRow.select(".range")
+    .transition()
+    .duration(10)
+    .attr("x", d => x(d.min_latency*1000))
+	  //.attr("opacity", 0)
+	  .attr("opacity", 1)
+	  .attr("height", 5)
+	  .attr("width", d => x((d.max_latency-d.min_latency)*1000));
 
   //Update data labels
   chartRow.select(".label")
@@ -743,7 +841,9 @@ function redraw_graph(data) {
     //     this.textContent = Math.round(i(t));
     //   };
     // });
-    .text(d => d3.formatPrefix(".3s", 1e-3)(d.latency)+"s"); // display as ms
+    .text(d => 
+      d.active ? d3.formatPrefix(".3s", 1e-3)(d.latency)+"s" // display as ms
+               : d3.format(".1f")((d.last_seen - d.first_seen)/1000/60)+" min");
     
 	//Fade out and remove exit elements
   chartRow.exit()
