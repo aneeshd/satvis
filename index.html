@@ -6,6 +6,8 @@ canvas {
 }
 svg {
   position: absolute;
+  font-size: 9px;
+  font-family: Calibri, sans-serif;
 }
 
 .overlay {
@@ -25,8 +27,6 @@ svg {
 }
 
 .chartRow .label {
-  font-family: sans-serif;
-  font-size: 9px;
   fill: white;
 }
 </style>
@@ -73,7 +73,7 @@ class Controls {
     var f1 = gui.addFolder('Simulation Options');
     f1.add(this, 'run');
     f1.add(this, 'speed');
-    f1.add(this, 'constellation', ['satellites', 'oneweb', 'starlink', 'gx']).onChange(
+    f1.add(this, 'constellation', ['satellites', 'telesat', 'oneweb', 'starlink', 'gx']).onChange(
       () => d3.queue().defer(d3.text, this.constellation + ".txt"+ '?' + Math.floor(Math.random() * 100000))
                       .await(function(error, satellites) {
                         if (error) throw error;
@@ -130,6 +130,7 @@ class Controls {
       }
       if (obj._from_trm!=undefined && obj._to_trm!=undefined) {
         obj.conntrack = new ConnTrack(obj._from_trm, obj._to_trm);
+        graph_settings = setup_graph();
       } else {
         obj.conntrack = undefined;
       }
@@ -143,6 +144,7 @@ class Controls {
       }
       if (obj._from_trm!=undefined && obj._to_trm!=undefined) {
         obj.conntrack = new ConnTrack(obj._from_trm, obj._to_trm);
+        graph_settings = setup_graph();
       } else {
         obj.conntrack = undefined;
       }
@@ -152,18 +154,27 @@ class Controls {
   }
 }
 
+class POP {
+  constructor(name) {
+    this.name = name;
+    this.gw = [];
+    console.log('Created POP', name);
+  }
+}
+
 var control = new Controls();
 
 var RADIANS = Math.PI / 180;
 var DEGREES = 180 / Math.PI;
 var R_EARTH = 6378.137; // equatorial radius (km)
 var SPEED_OF_LIGHT = 299792.458; // Speed of light in km/s
-
+var SPEED_OF_LIGHT_FIBRE = SPEED_OF_LIGHT / 1.467; // ... estimate
 const width = window.innerWidth * 0.9;
 const height = window.innerHeight;// * 0.9;
 
 // force control gui to be on top of everything else
-d3.select("div.dg.ac").style("z-index", 100);
+d3.select("div.dg.ac")
+  .style("z-index", 100);
 
 var graticule = d3.geoGraticule();
 
@@ -196,6 +207,7 @@ var timeFormat = d3.timeFormat("%Y-%m-%d %H:%M:%S");
 
 var satellites = [];
 var terminals = [];
+var pops = new Map();
 
 var graph_settings = undefined;
 
@@ -264,6 +276,11 @@ function plotglobe(world, graticule, context, path) {
 
 function load_terminals(data) {
   terminals = [];
+  //pops.clear();
+  for (pop of pops.values()) {
+    pop.gw = [];
+  }
+
   data.forEach(function(line) {
     var name = 'T_'+terminals.length;
     //console.log(line);
@@ -277,13 +294,44 @@ function load_terminals(data) {
         latitude: +line.lat * RADIANS,
         longitude: +line.lng * RADIANS,
         height: 0
-      }
+      },
+      pop: undefined,
     };
     terminals.push(t);
+    if (line.pop==undefined) {
+      // no POP
+    } else if (!pops.has(line.pop)) {
+      console.log("unknown POP "+line.pop+" for GW "+t.name);
+    } else {
+      t.pop = pops.get(line.pop);
+      pops.get(line.pop).gw.push(t);
+      console.log("GW "+t.name+" connected to "+t.pop.name+" POP");
+    }
     //console.log(t.name);
   });
 
   control.reload_terminals(terminals);
+}
+
+function load_pops(data) {
+  pops.clear();
+
+  data.forEach(function(line) {
+    //var name = 'T_'+terminals.length;
+    console.log(line);
+    if (line.lat==undefined || line.lng==undefined) return;
+    if (!line.name) return;
+    var p = new POP(line.name);
+    p.posGd = {
+        latitude: +line.lat * RADIANS,
+        longitude: +line.lng * RADIANS,
+        height: 0
+      }
+    pops.set(line.name, p);
+    //console.log(t.name);
+  });
+
+  //control.reload_terminals(terminals);
 }
 
 function load_satellites(data) {
@@ -296,6 +344,7 @@ function load_satellites(data) {
   var lines = data.split("\n");
   lines.forEach(function(line) {
     lineno += 1;
+    line = line.trim();
     if (line.length == 0) return;
     if (line.charAt(0)=="#") return;
 
@@ -328,6 +377,8 @@ function load_satellites(data) {
       name: line.trim()
     });
   });
+
+  graph_settings = setup_graph();
 }
 
 function run() {
@@ -342,7 +393,7 @@ function run() {
 
 function run_iteration(time) {
   stats_context.clearRect(0,0,width,height);
-  stats_context.globalAlpha = 0.6;//0.95;
+  stats_context.globalAlpha = 0.0;//1.0;//0.6;//0.95;
   stats_context.drawImage(sat_canvas.node(),0,0);
   sat_context.clearRect(0,0,width,height);
   sat_context.drawImage(stats_canvas.node(),0,0);
@@ -390,6 +441,11 @@ function run_iteration(time) {
   terminals.forEach(function(d) {
     draw_terminal(d, selected_sats);
   });
+
+  for (d of pops.entries()) {
+    if (d[0]==undefined || d[1]==undefined) continue;
+    draw_pop(d[0], d[1]);
+  }
 };
 
 class ConnTrack {
@@ -397,6 +453,21 @@ class ConnTrack {
     this.gw = gw;
     this.trm = trm;
     this.conns = new Map();
+
+    // if GW is attached to a POP, estimate the ground latency
+    // presumably, GWs don't move, so we only have to do this calculation once
+    // it's also assumed (in the current data model) that a GW is only connected to one POP
+    if (gw.pop != undefined) {
+      var dist_rads = d3.geoDistance(
+        [gw.pop.posGd.longitude * DEGREES, gw.pop.posGd.latitude * DEGREES],
+        [gw.posGd.longitude * DEGREES, gw.posGd.latitude * DEGREES]
+      );
+      var dist_km = R_EARTH * dist_rads;
+      this.ground_latency = dist_km / SPEED_OF_LIGHT_FIBRE;
+      console.log("ground latency", this.ground_latency, dist_rads, dist_km);
+    } else {
+      this.ground_latency = 0;
+    }
   }
 
   update(time) {
@@ -409,14 +480,16 @@ class ConnTrack {
     var to = new Map( trm_conns.map(x => [x[0].name, [x[1], x[2]]]) );
 
     var conns = this.conns;
+    var self = this;
 
     var data = new Map( selected_sats.map(function(s) {
-      var ret = [s.name, {"latency": ((+fr.get(s.name)[1]) + (+to.get(s.name)[1])) / SPEED_OF_LIGHT /* s */}];
+      var ret = [s.name, {"latency": (((+fr.get(s.name)[1]) + (+to.get(s.name)[1])) / SPEED_OF_LIGHT + self.ground_latency) /* s */}];
       if (!conns.has(s.name)) {
         ret[1].first_seen = time;
         ret[1].initial_latency = ret[1].latency;
         ret[1].min_latency = ret[1].latency;
         ret[1].max_latency = ret[1].latency;
+        ret[1].ground_latency = self.ground_latency;
       }
       return ret;
     }) );
@@ -619,26 +692,57 @@ function draw_terminal(trm, selected_sats) {
       var min_el = trm.minel;
 
       if ((el>=min_el && el<=(180-min_el))) {
-        var c = stats_context;
+        var c = sat_context;
         route = {type: "LineString", "coordinates": [
           [pos.longitude * DEGREES, pos.latitude * DEGREES],
           [sat.posGd.longitude * DEGREES, sat.posGd.latitude * DEGREES]
         ]};
         if (dist>sat.posGd.height*3) {
           // too far?
-          c.strokeStyle = "rgba(255,0,0,1)";
+          c.strokeStyle = "rgba(255,0,0,0.5)";
         } else {
-          c.strokeStyle = "rgba(140,140,140,1)";
+          c.strokeStyle = "rgba(140,140,140,0.5)";
         }
-        if (selected_sats.indexOf(sat)!=-1 && (trm==control._from_trm || trm==control._to_trm)) {
-          c.lineWidth = 10;
+        if (selected_sats.includes(sat) && (trm==control._from_trm || trm==control._to_trm)) {
+          c.lineWidth = 6;
         } else {
           c.lineWidth = 1;
         }
         c.beginPath();
-        stats_path(route);
+        sat_path(route);
         c.stroke();
       }
+    });
+  }
+}
+
+function draw_pop(name, pop) {
+  var pos = pop.posGd;
+  var r = 3;
+
+  var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.2*r;
+  var route = get_terminal_shape(ln, lt, sz, pos.height);
+
+  sat_context.fillStyle = "yellow";
+  sat_context.beginPath();
+  sat_path(route);
+  sat_context.fill();
+
+  // POP to GW connections
+  if (1) {
+    pop.gw.forEach(function(gw) {
+      if (gw!=control._from_trm && gw!=control._to_trm) return;
+
+      route = {type: "LineString", "coordinates": [
+        [pos.longitude * DEGREES, pos.latitude * DEGREES],
+        [gw.posGd.longitude * DEGREES, gw.posGd.latitude * DEGREES]
+      ]};
+      //console.log(pop.name, gw.name);
+      sat_context.beginPath();
+      sat_context.lineWidth = 4;
+      sat_context.strokeStyle = "rgba(128,128,0,0.5)";
+      sat_path(route);
+      sat_context.stroke();
     });
   }
 }
@@ -683,6 +787,8 @@ function _coreAngle(theta, altitude, r) {
 // http://bl.ocks.org/charlesdguthrie/11356441
 function setup_graph() {
 
+  d3.select("body").selectAll("svg").remove();
+
   // set the dimensions and margins of the graph
   var margin = {top: 20, right: 20, bottom: 30, left: 50},
       width = 400 - margin.left - margin.right,
@@ -699,9 +805,8 @@ function setup_graph() {
   // append the svg object to the body of the page
   // append a 'group' element to 'svg'
   // moves the 'group' element to the top left margin
-	d3.select("body").selectAll("svg").remove()
 
-	var svg = d3.select("body").append("svg")
+  var svg = d3.select("body").append("svg")
       .attr("class", "overlay")
       .attr("width", width + margin.left + margin.right)
       .attr("height", height + margin.top + margin.bottom)
@@ -712,19 +817,50 @@ function setup_graph() {
   // add the x Axis
   var xaxis = svg.append("g")
       .attr("transform", "translate(0," + height + ")")
-      .style('font-size', '9px');
+      .style('font-size', '9px')
+      .style('font-family', 'Calibri, sans-serif');
 
   // add the y Axis
   var yaxis = svg.append("g")
-      .style('font-size', '9px');
+      .style('font-size', '9px')
+      .style('font-family', 'Calibri, sans-serif');
 
   //Package and export settings
   var settings = {
-	  margin:margin, width:width, height:height,
-	  svg:svg, x:x, y:y, xaxis: xaxis, yaxis: yaxis
+    margin:margin, width:width, height:height,
+    svg:svg, x:x, y:y, xaxis: xaxis, yaxis: yaxis
   }
-  
-	return settings;
+
+  var svg2 = d3.select("body").append("svg")
+      .attr("class", "overlay")
+      .attr("width", width + margin.left + margin.right)
+      .attr("height", height/2 + margin.top + margin.bottom)
+      .style("top", height + margin.top*2)
+    .append("g")
+      .attr("transform", 
+            "translate(" + margin.left + "," + margin.top + ")");
+
+  height /= 2;
+
+  var hx = d3.scaleLinear().range([0, width]).domain([0,20]);
+  var hy = d3.scaleLinear().range([height, 0]);
+
+  var hxs = svg2.append('g')
+    .attr('transform', 'translate(0,'+height+')')
+    .style('font-size', '9px')
+    .style('font-family', 'Calibri, sans-serif');
+
+  var hys = svg2.append('g')
+    .style('font-size', '9px')
+    .style('font-family', 'Calibri, sans-serif');
+
+  var hist = d3.histogram()
+               .domain(hx.domain())
+               .thresholds(hx.ticks(20))
+               .value(d => d);
+  settings.histogram = {hist: hist, x: hx, y: hy, svg: svg2, xaxis: hxs, yaxis: hys, height: height, width: width, data: []};
+
+  return settings;
 }
 
 var mx = 0;
@@ -742,136 +878,181 @@ function redraw_graph(data_map) {
 
   var settings = graph_settings;
 
-  var x = settings.x,
-      y = settings.y,
-      xaxis = settings.xaxis,
-      yaxis = settings.yaxis,
-      margin = settings.margin,
-      svg = settings.svg,
-      height = settings.height,
-      width = settings.width;
+  {
+    var x = settings.x,
+        y = settings.y,
+        xaxis = settings.xaxis,
+        yaxis = settings.yaxis,
+        margin = settings.margin,
+        svg = settings.svg,
+        height = settings.height,
+        width = settings.width;
 
-  // Scale the range of the data in the domains
-  mx = Math.max((mx || 0), d3.max(data.map(d => d.latency*1000))); // convert to ms
-  x.domain( [0, mx] );
-  // Easier to follow if we don't reorder y
-  y.domain( data.sort((a,b) => a.first_seen-b.first_seen).map(d => d.sat) );
-  //y.domain( data.map(d => d.sat) );
+    // Scale the range of the data in the domains
+    mx = Math.max((mx || 0), d3.max(data.map(d => d.latency*1000))); // convert to ms
+    x.domain( [0, mx] );
+    // Easier to follow if we don't reorder y
+    y.domain( data.sort((a,b) => a.first_seen-b.first_seen).map(d => d.sat) );
+    //y.domain( data.map(d => d.sat) );
 
-  //Bind new data to chart rows 
+    //Bind new data to chart rows 
 
-	//Create chart row and move to below the bottom of the chart
-	var chartRow = svg.selectAll("g.chartRow")
-    .data(data);
-    
-	var newRow = chartRow
-	  .enter()
-      .append("g")
-      .attr("class", "chartRow")
-      .attr("transform", "translate(0," + height + margin.top + margin.bottom + ")");
+    //Create chart row and move to below the bottom of the chart
+    var chartRow = svg.selectAll("g.chartRow")
+      .data(data);
+      
+    var newRow = chartRow
+      .enter()
+        .append("g")
+        .attr("class", "chartRow")
+        .attr("transform", "translate(0," + height + margin.top + margin.bottom + ")");
 
-  // // append the rectangles for the bar chart
-  // svg.selectAll(".bar")
-  //     .data(data)
-  //   .enter().append("rect")
-  //     .attr("class", "bar")
-  //     //.attr("x", function(d) { return x(d.latency); })
-  //     .attr("width", function(d) {return x(d.latency); } )
-  //     .attr("y", function(d) { return y(d.sat); })
-  //     .attr("height", y.bandwidth());
+    // // append the rectangles for the bar chart
+    // svg.selectAll(".bar")
+    //     .data(data)
+    //   .enter().append("rect")
+    //     .attr("class", "bar")
+    //     //.attr("x", function(d) { return x(d.latency); })
+    //     .attr("width", function(d) {return x(d.latency); } )
+    //     .attr("y", function(d) { return y(d.sat); })
+    //     .attr("height", y.bandwidth());
 
-	//Add rectangles
-	newRow.insert("rect")
-	  .attr("class", "bar")
-    .attr("x", 0)
-	  //.attr("opacity", 0)
-	  .attr("opacity", 1)
-	  .attr("height", y.bandwidth())
-	  .attr("width", d => x(d.latency*1000));
+    //Add rectangles
+    newRow.insert("rect")
+      .attr("class", "bar")
+      .attr("x", 0)
+      //.attr("opacity", 0)
+      .attr("opacity", 1)
+      .attr("height", y.bandwidth())
+      .attr("width", d => x(d.latency*1000));
 
-  // min/max latency
-  newRow.insert("rect")
-	  .attr("class", "range")
-    .attr("x", d => x(d.min_latency*1000))
-	  //.attr("opacity", 0)
-	  .attr("opacity", 1)
-	  .attr("height", 5)
-	  .attr("width", d => x((d.max_latency-d.min_latency)*1000));
+    // min/max latency
+    newRow.insert("rect")
+      .attr("class", "range")
+      .attr("x", d => x(d.min_latency*1000))
+      //.attr("opacity", 0)
+      .attr("opacity", 1)
+      .attr("height", 5)
+      .attr("width", d => x((d.max_latency-d.min_latency)*1000));
 
-  //Add value labels
-	newRow.append("text")
-	  .attr("class", "label")
-	  .attr("y", y.bandwidth()/2)
-	  .attr("x", 0)
-	  //.attr("opacity", 0)
-	  .attr("opacity", 1)
-	  .attr("dy", ".35em")
-	  .attr("dx", "0.5em")
-	  ;//.text(d => d.latency);
+    //Add value labels
+    newRow.append("text")
+      .attr("class", "label")
+      .attr("y", y.bandwidth()/2)
+      .attr("x", 0)
+      //.attr("opacity", 0)
+      .attr("opacity", 1)
+      .attr("dy", ".35em")
+      .attr("dx", "0.5em")
+      ;//.text(d => d.latency);
 
-	//Update bar widths
-  chartRow.select(".bar")
-    .transition()
-    .duration(10)
-    .attr("class", d => d.active ? "bar active" : "bar inactive")
-	  .attr("height", y.bandwidth())
-	  .attr("width", d => x(d.latency*1000))
-	  .attr("opacity", 1);
+    //Update bar widths
+    chartRow.select(".bar")
+      .transition()
+      .duration(10)
+      .attr("class", d => d.active ? "bar active" : "bar inactive")
+      .attr("height", y.bandwidth())
+      .attr("width", d => x(d.latency*1000))
+      .attr("opacity", 1);
 
-  // min/max latency
-  chartRow.select(".range")
-    .transition()
-    .duration(10)
-    .attr("x", d => x(d.min_latency*1000))
-	  //.attr("opacity", 0)
-	  .attr("opacity", 1)
-	  .attr("height", 5)
-	  .attr("width", d => x((d.max_latency-d.min_latency)*1000));
+    // min/max latency
+    chartRow.select(".range")
+      .transition()
+      .duration(10)
+      .attr("x", d => x(d.min_latency*1000))
+      //.attr("opacity", 0)
+      .attr("opacity", 1)
+      .attr("height", 5)
+      .attr("width", d => x((d.max_latency-d.min_latency)*1000));
 
-  //Update data labels
-  chartRow.select(".label")
-    //.update()
-    //.transition()
-	  //.duration(10)
-	  .attr("y", y.bandwidth()/2)
-	  .attr("opacity", 1)
-	  //.tween("text", function(d) { 
-    //   var i = d3.interpolate(+this.textContent.replace(/\,/g,''), +d.latency);
-    //   return function(t) {
-    //     this.textContent = Math.round(i(t));
-    //   };
-    // });
-    .text(d => 
-      d.active ? d3.formatPrefix(".3s", 1e-3)(d.latency)+"s" // display as ms
-               : d3.format(".1f")((d.last_seen - d.first_seen)/1000/60)+" min");
-    
-	//Fade out and remove exit elements
-  chartRow.exit()
-    //.transition()
-	  //.style("opacity", "0")
-	  //.attr("transform", "translate(0," + (height + margin.top + margin.bottom) + ")")
-	  .remove();
+    //Update data labels
+    chartRow.select(".label")
+      //.update()
+      //.transition()
+      //.duration(10)
+      .attr("y", y.bandwidth()/2)
+      .attr("opacity", 1)
+      //.tween("text", function(d) { 
+      //   var i = d3.interpolate(+this.textContent.replace(/\,/g,''), +d.latency);
+      //   return function(t) {
+      //     this.textContent = Math.round(i(t));
+      //   };
+      // });
+      .text(d => 
+        d.active ? d3.formatPrefix(".1s", 1e-3)(d.latency)+"s" // display as ms
+                 : d3.format(".1f")((d.last_seen - d.first_seen)/1000/60)+" min");
+      
+    //Fade out and remove exit elements
+    chartRow.exit()
+      //.transition()
+      //.style("opacity", "0")
+      //.attr("transform", "translate(0," + (height + margin.top + margin.bottom) + ")")
+      .remove();
 
-	//REORDER ROWS
+    //REORDER ROWS
 
-	var delay = function(d, i) { return 200 + i * 30; };
+    var delay = function(d, i) { return 200 + i * 30; };
 
-  chartRow.merge(chartRow)
-    .transition()
-		//.delay(delay)
-		//.duration(900)
-		.duration(30)
-		.attr("transform", function(d){ return "translate(0," + y(d.sat) + ")"; });
-    
+    chartRow.merge(chartRow)
+      .transition()
+      //.delay(delay)
+      //.duration(900)
+      .duration(30)
+      .attr("transform", function(d){ return "translate(0," + y(d.sat) + ")"; });
+      
 
-  // update the x Axis
-  xaxis
-      .attr("transform", "translate(0," + height + ")")
-      .call(d3.axisBottom(x));
+    // update the x Axis
+    xaxis
+        .attr("transform", "translate(0," + height + ")")
+        .call(d3.axisBottom(x));
 
-  // update the y Axis
-  yaxis
-      .call(d3.axisLeft(y));
+    // update the y Axis
+    yaxis
+        .call(d3.axisLeft(y));
+  }
+
+  ///////////////////////////////
+
+  {
+    var histogram = settings.histogram;
+    var hdata = data.filter(d => d.active);
+    var x = histogram.x, y = histogram.y;
+
+    histogram.data.push(hdata.length);
+
+    var bins = histogram.hist(histogram.data);
+    //console.log("bins", bins);
+    y.domain([0, d3.max(bins, function(d) { return d.length; })]);
+    histogram.xaxis.call(d3.axisBottom(histogram.x));
+    histogram.yaxis.call(d3.axisLeft(histogram.y));
+
+    var chartRow = histogram.svg.selectAll("g.histCol")
+      .data(bins);
+      
+    var newRow = chartRow
+      .enter()
+        .append("g")
+        .attr("class", "histCol");
+        //.attr("transform", "translate(0," + height + margin.top + margin.bottom + ")");
+
+    //Add rectangles
+    newRow.insert("rect")
+      .attr("class", "bar")
+      .attr("x", 0)
+      //.attr("opacity", 0)
+      .attr("opacity", 1);
+      //.attr("height", y.bandwidth())
+      //.attr("width", d => x(d.latency*1000));
+
+    chartRow.select(".bar")
+      .transition()
+      .duration(10)
+      .attr("x", 1)
+      .attr("transform", function(d) { return "translate(" + x(d.x0) + "," + y(d.length) + ")"; })
+      .attr("width", function(d) { return Math.max(0, x(d.x1) - x(d.x0) - 1); })
+      .attr("height", function(d) { return Math.max(d.length>0 ? 2 : 0, histogram.height - y(d.length)); })
+      .style("fill", "#69b3a2");
+  }
 }
 
 // adapted from:
@@ -912,19 +1093,22 @@ function get_satellite_shape(ln, lt, sz, height) {
 
 d3.select(self.frameElement).style("height", height + "px");
 
-graph_settings = setup_graph();
+//graph_settings = setup_graph();
 
 // random bit is to avoid caching: https://stackoverflow.com/questions/13053096/avoid-data-caching-when-using-d3-text/13054513
 d3.queue()
-  // slow: .defer(d3.json, "https://raw.githubusercontent.com/d3/d3.github.com/master/world-50m.v1.json")
+  // slow when zooming/panning, but much better resolution: 
+  //.defer(d3.json, "https://raw.githubusercontent.com/d3/d3.github.com/master/world-50m.v1.json")
   .defer(d3.json, "https://raw.githubusercontent.com/d3/d3.github.com/master/world-110m.v1.json")
+  .defer(d3.tsv, "pops.txt"+ '?' + Math.floor(Math.random() * 100000))
   .defer(d3.tsv, "gateways.txt"+ '?' + Math.floor(Math.random() * 100000))
   .defer(d3.tsv, "terminals.txt"+ '?' + Math.floor(Math.random() * 100000))
   .defer(d3.text, "satellites.txt"+ '?' + Math.floor(Math.random() * 100000))
-  .await(function(error, world, gateways, terminals, satellites) {
+  .await(function(error, world, pops, gateways, terminals, satellites) {
     if (error) throw error;
     load_world(world);
     control.create_controls();
+    load_pops(pops);
     load_terminals(gateways.concat(terminals));
     load_satellites(satellites);
     run();
