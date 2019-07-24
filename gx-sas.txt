@@ -1,15 +1,16 @@
-lat	lng	name	minel
+lat	lng	name	minel	pop
 # Based on https://www.inmarsat.com/about-us/our-satellites/our-ground-network/
 # and whatever Google reports as lat/long for those towns. This is not necessarily
 # the same as the lat/long for the SAS.
--36.8485	174.7633	Auckland	10
-53.27330	6.229900	Burum	10
-41.99500	13.54720	Fucino	10
-46.61820	-75.0181	Laurentides
-45.16020	-93.0888	Lino Lakes	10
-37.82130	22.66100	Nemea	10
+-36.8485	174.7633	Auckland	10	Sydney
+53.27330	6.229900	Burum	10	Amsterdam
+41.99500	13.54720	Fucino	10	Amsterdam
+46.61820	-75.0181	Laurentides	10	New York
+45.16020	-93.0888	Lino Lakes	10	New York
+37.82130	22.66100	Nemea	10	Amsterdam
+# what MMP?
 21.6816667	-158.0386111	Paumalu	10
--31.9505	115.8605	Perth	10
--36.3987	174.6605	Warkworth	10
-49.853959	-97.2923068	Winnipeg	10
--31.4826	118.2724	Merredin	10
+-31.9505	115.8605	Perth	10	Sydney
+-36.3987	174.6605	Warkworth	10	Sydney
+49.853959	-97.2923068	Winnipeg	10	New York
+-31.4826	118.2724	Merredin	10	Sydney
