@@ -1,13 +1,19 @@
 <!DOCTYPE html>
 <meta charset="utf-8">
 <style>
+body {
+  background-color: #0b0d0e;
+}
+
 canvas {
   position: absolute;
 }
 svg {
   position: absolute;
   font-size: 9px;
-  font-family: Calibri, sans-serif;
+  font-family: calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif;
+  background-color: #374148;
+  opacity: 0.9;
 }
 
 .overlay {
@@ -29,6 +35,13 @@ svg {
 .chartRow .label {
   fill: white;
 }
+
+g.tick line {
+  stroke: green;
+}
+g.tick text {
+  fill: green;
+}
 </style>
 <body>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/4.13.0/d3.min.js"></script>
@@ -42,6 +55,8 @@ svg {
 <script src="satellite.js"></script>
 <script src="solar-positions.js"></script>
 <script>
+
+const font_family = 'calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif';
 
 // Controls
 const gui = new dat.GUI();
@@ -111,6 +126,7 @@ class Controls {
     // f2.add(this, 'high-altitude');//.onChange(enabled => d3.selectAll('.highaltitude').style('display', enabled ? null : 'none'));
     f2.open();
     this.f2 = f2;
+    // gui.remember(this);
   }
 
   reload_terminals(terminals) {
@@ -151,6 +167,7 @@ class Controls {
     });
     f3.open();
     this.f3 = f3;
+    // gui.remember(this);
   }
 }
 
@@ -163,18 +180,20 @@ class POP {
 }
 
 var control = new Controls();
+// gui.remember(control);
 
 var RADIANS = Math.PI / 180;
 var DEGREES = 180 / Math.PI;
 var R_EARTH = 6378.137; // equatorial radius (km)
 var SPEED_OF_LIGHT = 299792.458; // Speed of light in km/s
 var SPEED_OF_LIGHT_FIBRE = SPEED_OF_LIGHT / 1.467; // ... estimate
-const width = window.innerWidth * 0.9;
+const width = window.innerWidth;// * 0.9;
 const height = window.innerHeight;// * 0.9;
 
 // force control gui to be on top of everything else
 d3.select("div.dg.ac")
-  .style("z-index", 100);
+  .style("z-index", 100)
+  .style("opacity", 0.9);
 
 var graticule = d3.geoGraticule();
 
@@ -251,12 +270,17 @@ function load_world(world) {
 function plotglobe(world, graticule, context, path) {
   context.clearRect(0,0,width,height);
 
-  context.fillStyle = "#ccc";
+  context.fillStyle = "rgb(9,26,43";
+  context.beginPath();
+  path({type: 'Sphere'});
+  context.fill();
+
+  context.fillStyle = "rgb(248,244,240)";
   context.beginPath();
   path(topojson.feature(world, world.objects.land));
   context.fill();
 
-  context.strokeStyle = "#aaa";
+  context.strokeStyle = "rgb(214,210,213)";
   context.beginPath();
   path(topojson.feature(world, world.objects.countries));
   context.lineWidth = 1;
@@ -393,7 +417,7 @@ function run() {
 
 function run_iteration(time) {
   stats_context.clearRect(0,0,width,height);
-  stats_context.globalAlpha = 0.0;//1.0;//0.6;//0.95;
+  stats_context.globalAlpha = 0;
   stats_context.drawImage(sat_canvas.node(),0,0);
   sat_context.clearRect(0,0,width,height);
   sat_context.drawImage(stats_canvas.node(),0,0);
@@ -818,24 +842,24 @@ function setup_graph() {
   var xaxis = svg.append("g")
       .attr("transform", "translate(0," + height + ")")
       .style('font-size', '9px')
-      .style('font-family', 'Calibri, sans-serif');
+      .style('font-family', font_family);
 
   // add the y Axis
   var yaxis = svg.append("g")
       .style('font-size', '9px')
-      .style('font-family', 'Calibri, sans-serif');
+      .style('font-family', font_family);
 
   //Package and export settings
   var settings = {
     margin:margin, width:width, height:height,
     svg:svg, x:x, y:y, xaxis: xaxis, yaxis: yaxis
   }
-
+  
   var svg2 = d3.select("body").append("svg")
       .attr("class", "overlay")
       .attr("width", width + margin.left + margin.right)
       .attr("height", height/2 + margin.top + margin.bottom)
-      .style("top", height + margin.top*2)
+      .style("top", height + margin.top + margin.bottom + margin.top)
     .append("g")
       .attr("transform", 
             "translate(" + margin.left + "," + margin.top + ")");
@@ -848,11 +872,11 @@ function setup_graph() {
   var hxs = svg2.append('g')
     .attr('transform', 'translate(0,'+height+')')
     .style('font-size', '9px')
-    .style('font-family', 'Calibri, sans-serif');
+    .style('font-family', font_family);
 
   var hys = svg2.append('g')
     .style('font-size', '9px')
-    .style('font-family', 'Calibri, sans-serif');
+    .style('font-family', font_family);
 
   var hist = d3.histogram()
                .domain(hx.domain())
@@ -979,8 +1003,8 @@ function redraw_graph(data_map) {
       //   };
       // });
       .text(d => 
-        d.active ? d3.formatPrefix(".1s", 1e-3)(d.latency)+"s" // display as ms
-                 : d3.format(".1f")((d.last_seen - d.first_seen)/1000/60)+" min");
+          d.active ? d3.formatPrefix(".1s", 1e-3)(d.latency)+"s" // display as ms
+                : d3.format(".1f")((d.last_seen - d.first_seen)/1000/60)+" min");
       
     //Fade out and remove exit elements
     chartRow.exit()
@@ -1075,6 +1099,13 @@ function plotshade(time, context, path) {
 }
 
 function get_terminal_shape(ln, lt, sz, height) {
+  var circle = d3.geoCircle().center([ln, lt]).radius(sz);
+  var route = circle();
+  return route;
+}
+
+function get_satellite_shape(ln, lt, sz, height) {
+  // much faster than the geoCircle above
   var route = {
     type: "LineString", 
     coordinates: [
@@ -1085,10 +1116,6 @@ function get_terminal_shape(ln, lt, sz, height) {
       [ln-sz, lt-sz, height],
     ]};
   return route;
-}
-
-function get_satellite_shape(ln, lt, sz, height) {
-  return get_terminal_shape(ln, lt, sz, height);
 }
 
 d3.select(self.frameElement).style("height", height + "px");
