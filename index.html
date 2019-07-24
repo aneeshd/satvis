@@ -733,7 +733,7 @@ function draw_terminal(trm, selected_sats) {
     if (trm!=control._from_trm && trm!=control._to_trm) return;
   }
 
-  if (control['sat-to-ground']) {
+  if (control['sat-to-ground'] || control.zen) {
     trm.conn.forEach(function(s) {
       var sat = s[0], lookangles = s[1], dist = s[2];
 
@@ -844,95 +844,102 @@ function setup_graph() {
 
   if (control.conntrack == undefined) return;
 
+  var settings = {};
+
   // set the dimensions and margins of the graph
   var margin = {top: 20, right: 20, bottom: 30, left: 50},
       width = 400 - margin.left - margin.right,
       height = 300 - margin.top - margin.bottom;
 
-  // set the ranges
-  var y = d3.scaleBand()
-            .range([height, 0])
-            .padding(0.1);
+  {
+    // set the ranges
+    var y = d3.scaleBand()
+              .range([height, 0])
+              .padding(0.1);
 
-  var x = d3.scaleLinear()
-            .range([0, width]);
+    var x = d3.scaleLinear()
+              .range([0, width]);
 
-  // append the svg object to the body of the page
-  // append a 'group' element to 'svg'
-  // moves the 'group' element to the top left margin
+    // append the svg object to the body of the page
+    // append a 'group' element to 'svg'
+    // moves the 'group' element to the top left margin
 
-  var svgp = d3.select("body").append("svg")
-      .attr("class", "overlay")
-      .attr("width", width + margin.left + margin.right)
-      .attr("height", height + margin.top + margin.bottom)
-      .style("top", margin.top/2);
+    var svgp = d3.select("body").append("svg")
+        .attr("class", "overlay")
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .style("top", margin.top/2);
 
-  var svg = svgp
-    .append("g")
-      .attr("transform", 
-            "translate(" + margin.left + "," + margin.top + ")");
+    var svg = svgp
+      .append("g")
+        .attr("transform", 
+              "translate(" + margin.left + "," + margin.top + ")");
 
-  // add the x Axis
-  var xaxis = svg.append("g")
-      .attr("transform", "translate(0," + height + ")")
-      .style('font-size', '9px')
-      .style('font-family', font_family);
+    // add the x Axis
+    var xaxis = svg.append("g")
+        .attr("transform", "translate(0," + height + ")")
+        .style('font-size', '9px')
+        .style('font-family', font_family);
 
-  // add the y Axis
-  var yaxis = svg.append("g")
-      .style('font-size', '9px')
-      .style('font-family', font_family);
+    // add the y Axis
+    var yaxis = svg.append("g")
+        .style('font-size', '9px')
+        .style('font-family', font_family);
 
-  svgp.append('text')
-    .attr('x', '100%')
-    .attr('y', '1em')
-    .attr('text-anchor', 'end')
-    .attr('class', 'boxtitle')
-    .text('Latency + Dwell Time');
+    svgp.append('text')
+      .attr('x', '100%')
+      .attr('y', '1em')
+      .attr('text-anchor', 'end')
+      .attr('class', 'boxtitle')
+      .text('Latency + Dwell Time');
 
-  //Package and export settings
-  var settings = {
-    margin:margin, width:width, height:height,
-    svg:svg, x:x, y:y, xaxis: xaxis, yaxis: yaxis
+    settings.latdwell = {
+      margin:margin, width:width, height:height,
+      svg:svg, x:x, y:y, xaxis: xaxis, yaxis: yaxis
+    }
+
   }
   
-  var svg2p = d3.select("body").append("svg")
-      .attr("class", "overlay")
-      .attr("width", width + margin.left + margin.right)
-      .attr("height", height/2 + margin.top + margin.bottom)
-      .style("top", height + margin.top + margin.bottom + margin.top);
+  {
+    var svg2p = d3.select("body").append("svg")
+        .attr("class", "overlay")
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height/2 + margin.top + margin.bottom)
+        .style("top", height + margin.top + margin.bottom + margin.top);
 
-  var svg2 = svg2p
-    .append("g")
-      .attr("transform", 
-            "translate(" + margin.left + "," + margin.top + ")");
+    var svg2 = svg2p
+      .append("g")
+        .attr("transform", 
+              "translate(" + margin.left + "," + margin.top + ")");
 
-  height /= 2;
+    height /= 2;
 
-  var hx = d3.scaleLinear().range([0, width]).domain([0,20]);
-  var hy = d3.scaleLinear().range([height, 0]);
+    var hx = d3.scaleLinear().range([0, width]).domain([0,20]);
+    var hy = d3.scaleLinear().range([height, 0]);
 
-  var hxs = svg2.append('g')
-    .attr('transform', 'translate(0,'+height+')')
-    .style('font-size', '9px')
-    .style('font-family', font_family);
+    var hxs = svg2.append('g')
+      .attr('transform', 'translate(0,'+height+')')
+      .style('font-size', '9px')
+      .style('font-family', font_family);
 
-  var hys = svg2.append('g')
-    .style('font-size', '9px')
-    .style('font-family', font_family);
+    var hys = svg2.append('g')
+      .style('font-size', '9px')
+      .style('font-family', font_family);
 
-  svg2p.append('text')
-    .attr('x', '100%')
-    .attr('y', '1em')
-    .attr('text-anchor', 'end')
-    .attr('class', 'boxtitle')
-    .text('Visible Satellites');
+    svg2p.append('text')
+      .attr('x', '100%')
+      .attr('y', '1em')
+      .attr('text-anchor', 'end')
+      .attr('class', 'boxtitle')
+      .text('Visible Satellites');
 
-  var hist = d3.histogram()
-               .domain(hx.domain())
-               .thresholds(hx.ticks(20))
-               .value(d => d);
-  settings.histogram = {hist: hist, x: hx, y: hy, svg: svg2, xaxis: hxs, yaxis: hys, height: height, width: width, data: []};
+    var hist = d3.histogram()
+                  .domain(hx.domain())
+                  .thresholds(hx.ticks(20))
+                  .value(d => d);
+
+    settings.histogram = {hist: hist, x: hx, y: hy, svg: svg2, xaxis: hxs, yaxis: hys, height: height, width: width, data: []};
+  }
 
   return settings;
 }
@@ -950,9 +957,8 @@ function redraw_graph(data_map) {
     data.push(y);
   }
 
-  var settings = graph_settings;
-
   {
+    var settings = graph_settings.latdwell;
     var x = settings.x,
         y = settings.y,
         xaxis = settings.xaxis,
@@ -1088,7 +1094,7 @@ function redraw_graph(data_map) {
   ///////////////////////////////
 
   {
-    var histogram = settings.histogram;
+    var histogram = graph_settings.histogram;
     var hdata = data.filter(d => d.active);
     var x = histogram.x, y = histogram.y;
 
