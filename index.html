@@ -7,6 +7,7 @@ body {
 
 canvas {
   position: absolute;
+  top: 0;
 }
 svg {
   position: absolute;
@@ -14,10 +15,11 @@ svg {
   font-family: calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif;
   background-color: #374148;
   opacity: 0.9;
+  padding: 3px;
 }
 
 .overlay {
-  pointer-events:none;
+  pointer-events: none;
 }
 
 .active { fill: steelblue; }
@@ -41,6 +43,18 @@ g.tick line {
 }
 g.tick text {
   fill: green;
+}
+
+div.datetime {
+  font-size: 12px;
+  font-family: calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif;
+  text-align: center;
+  color: green;
+}
+
+text.boxtitle {
+  fill: green;
+  font-weight: bold;
 }
 </style>
 <body>
@@ -69,6 +83,7 @@ class Controls {
     this.gateways = 'gateways';
     this.users = 'terminals';
 
+    this.zen = false;
     this.shade = true;
     this['satellite names'] = false;
     this['sat-to-ground'] = true;
@@ -116,6 +131,7 @@ class Controls {
     this.f1 = f1;
 
     var f2 = gui.addFolder('Display Options');
+    f2.add(this, 'zen');
     f2.add(this, 'satellite names');
     f2.add(this, 'sat-to-ground');
     f2.add(this, 'sat-to-sat');
@@ -187,13 +203,18 @@ var DEGREES = 180 / Math.PI;
 var R_EARTH = 6378.137; // equatorial radius (km)
 var SPEED_OF_LIGHT = 299792.458; // Speed of light in km/s
 var SPEED_OF_LIGHT_FIBRE = SPEED_OF_LIGHT / 1.467; // ... estimate
-const width = window.innerWidth;// * 0.9;
-const height = window.innerHeight;// * 0.9;
+
+// use the whole window to start; zoom out if you want
+const width = window.innerWidth;
+const height = window.innerHeight;
 
 // force control gui to be on top of everything else
 d3.select("div.dg.ac")
   .style("z-index", 100)
   .style("opacity", 0.9);
+
+var title = d3.select("body").append("div")
+  .attr("class", "overlay datetime");
 
 var graticule = d3.geoGraticule();
 
@@ -422,10 +443,7 @@ function run_iteration(time) {
   sat_context.clearRect(0,0,width,height);
   sat_context.drawImage(stats_canvas.node(),0,0);
 
-  stats_context.font = "bold 14px sans-serif";
-  stats_context.fillStyle = "#333";
-  stats_context.textAlign = "center";
-  stats_context.fillText(timeFormat(time),width/2,20);
+  title.text(timeFormat(time));
 
   var gmst = satellite.gstimeFromDate(
       time.getUTCFullYear(),
@@ -633,6 +651,8 @@ function draw_sat(sat, selected_sats) {
     return
   }
 
+  if (control.zen && !selected_sats.includes(sat)) return;
+
   var name = sat.name;
   var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.4;
   var route = get_satellite_shape(ln, lt, sz, pos.height);
@@ -653,9 +673,9 @@ function draw_sat(sat, selected_sats) {
   if (control['satellite names'] || detail) {
     // FIXME does not respect geo projection if hidden
     var xy = projection([ln, lt]);
-    stats_context.font = "9px sans-serif";
-    stats_context.textAlign = "center";
-    stats_context.fillText(name, xy[0], xy[1]+14);
+    sat_context.font = "9px sans-serif";
+    sat_context.textAlign = "center";
+    sat_context.fillText(name, xy[0], xy[1]+14);
   }
 
   if (control.FOV || detail) {
@@ -709,9 +729,18 @@ function draw_terminal(trm, selected_sats) {
   sat_path(route);
   sat_context.fill();
 
+  if (control.zen) {
+    if (trm!=control._from_trm && trm!=control._to_trm) return;
+  }
+
   if (control['sat-to-ground']) {
     trm.conn.forEach(function(s) {
       var sat = s[0], lookangles = s[1], dist = s[2];
+
+      if (control.zen) {
+        if (!selected_sats.includes(sat)) return;
+      }
+
       var el = lookangles.elevation * DEGREES;
       var min_el = trm.minel;
 
@@ -813,6 +842,8 @@ function setup_graph() {
 
   d3.select("body").selectAll("svg").remove();
 
+  if (control.conntrack == undefined) return;
+
   // set the dimensions and margins of the graph
   var margin = {top: 20, right: 20, bottom: 30, left: 50},
       width = 400 - margin.left - margin.right,
@@ -830,10 +861,13 @@ function setup_graph() {
   // append a 'group' element to 'svg'
   // moves the 'group' element to the top left margin
 
-  var svg = d3.select("body").append("svg")
+  var svgp = d3.select("body").append("svg")
       .attr("class", "overlay")
       .attr("width", width + margin.left + margin.right)
       .attr("height", height + margin.top + margin.bottom)
+      .style("top", margin.top/2);
+
+  var svg = svgp
     .append("g")
       .attr("transform", 
             "translate(" + margin.left + "," + margin.top + ")");
@@ -849,17 +883,26 @@ function setup_graph() {
       .style('font-size', '9px')
       .style('font-family', font_family);
 
+  svgp.append('text')
+    .attr('x', '100%')
+    .attr('y', '1em')
+    .attr('text-anchor', 'end')
+    .attr('class', 'boxtitle')
+    .text('Latency + Dwell Time');
+
   //Package and export settings
   var settings = {
     margin:margin, width:width, height:height,
     svg:svg, x:x, y:y, xaxis: xaxis, yaxis: yaxis
   }
   
-  var svg2 = d3.select("body").append("svg")
+  var svg2p = d3.select("body").append("svg")
       .attr("class", "overlay")
       .attr("width", width + margin.left + margin.right)
       .attr("height", height/2 + margin.top + margin.bottom)
-      .style("top", height + margin.top + margin.bottom + margin.top)
+      .style("top", height + margin.top + margin.bottom + margin.top);
+
+  var svg2 = svg2p
     .append("g")
       .attr("transform", 
             "translate(" + margin.left + "," + margin.top + ")");
@@ -877,6 +920,13 @@ function setup_graph() {
   var hys = svg2.append('g')
     .style('font-size', '9px')
     .style('font-family', font_family);
+
+  svg2p.append('text')
+    .attr('x', '100%')
+    .attr('y', '1em')
+    .attr('text-anchor', 'end')
+    .attr('class', 'boxtitle')
+    .text('Visible Satellites');
 
   var hist = d3.histogram()
                .domain(hx.domain())
@@ -986,7 +1036,7 @@ function redraw_graph(data_map) {
       .attr("x", d => x(d.min_latency*1000))
       //.attr("opacity", 0)
       .attr("opacity", 1)
-      .attr("height", 5)
+      .attr("height", y.bandwidth()/3)
       .attr("width", d => x((d.max_latency-d.min_latency)*1000));
 
     //Update data labels
