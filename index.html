@@ -781,8 +781,8 @@ function draw_terminal(trm, selected_sats) {
           [pos.longitude * DEGREES, pos.latitude * DEGREES],
           [sat.posGd.longitude * DEGREES, sat.posGd.latitude * DEGREES]
         ]};
-        if (dist>sat.posGd.height*3) {
-          // too far?
+        if (el<(min_el+10) || el>(180-min_el-10)) {
+          // warn when elevation angle is close to the allowed minimum
           c.strokeStyle = "rgba(255,0,0,0.5)";
         } else {
           c.strokeStyle = "rgba(140,140,140,0.5)";
