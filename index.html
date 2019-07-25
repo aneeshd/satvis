@@ -365,7 +365,7 @@ function load_terminals(data) {
     var t = {
       id: name,
       name: line.name || name,
-      minel: line.minel || 20,
+      minel: (+line.minel) || 20,
       posGd: {
         latitude: +line.lat * RADIANS,
         longitude: +line.lng * RADIANS,
