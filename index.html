@@ -56,6 +56,7 @@ g.tick text {
 div.datetime {
   font-size: 12px;
   font-family: calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif;
+  font-weight: bold;
   text-align: center;
   color: green;
 }
@@ -69,7 +70,7 @@ div.datetime {
 
 .infopanel table {
   color: yellowgreen;
-  border: 1px solid green;
+  border: none;
   width: 70%;
   text-align: left;
   border-collapse: collapse;
@@ -118,6 +119,10 @@ function seconds2time(seconds) {
   return time;
 }
 function msec2time(ms) { return seconds2time(ms/1000); }
+
+function format_ms(x) {
+  return d3.formatPrefix(".1s", 1e-3)(x)+"s" // display as ms
+}
 
 // Controls
 const gui = new dat.GUI();
@@ -215,12 +220,7 @@ class Controls {
       } catch(e) {
         obj._from_trm = undefined;
       }
-      if (obj._from_trm!=undefined && obj._to_trm!=undefined) {
-        obj.conntrack = new ConnTrack(obj._from_trm, obj._to_trm);
-        graph_settings = setup_graph();
-      } else {
-        obj.conntrack = undefined;
-      }
+      obj.load_conntrack();
     });
     f3.add(this, "to_trm", trms).onChange(function() {
       var obj = this.object;
@@ -229,16 +229,20 @@ class Controls {
       } catch(e) {
         obj._to_trm = undefined;
       }
-      if (obj._from_trm!=undefined && obj._to_trm!=undefined) {
-        obj.conntrack = new ConnTrack(obj._from_trm, obj._to_trm);
-        graph_settings = setup_graph();
-      } else {
-        obj.conntrack = undefined;
-      }
+      obj.load_conntrack();
     });
     f3.open();
     this.f3 = f3;
     // gui.remember(this);
+  }
+
+  load_conntrack() {
+    if (this._from_trm!=undefined && this._to_trm!=undefined) {
+      this.conntrack = new ConnTrack(this._from_trm, this._to_trm);
+      graph_settings = setup_graph();
+    } else {
+      this.conntrack = undefined;
+    }
   }
 }
 
@@ -502,7 +506,7 @@ function load_satellites(data) {
     });
   });
 
-  graph_settings = setup_graph();
+  control.load_conntrack();
 }
 
 function run() {
@@ -940,12 +944,14 @@ function setup_graph() {
   // set the dimensions and margins of the graph
   var margin = {top: 20, right: 20, bottom: 30, left: 50},
       width = 400 - margin.left - margin.right,
-      height = 300 - margin.top - margin.bottom;
+      height = (window.innerHeight * 0.8)/2,
+      eheight = height - 50,
+      top = 10;
 
   {
     // set the ranges
     var y = d3.scaleBand()
-              .range([height, 0])
+              .range([eheight, 0])
               .padding(0.1);
 
     var x = d3.scaleLinear()
@@ -958,9 +964,11 @@ function setup_graph() {
     var svgp = d3.select("body").append("svg")
         .attr("class", "overlay")
         .attr("width", width + margin.left + margin.right)
-        .attr("height", height + margin.top + margin.bottom)
-        .style("top", margin.top/2);
+        .attr("height", height)
+        .style("top", top);
 
+    top += height + 10;
+  
     var svg = svgp
       .append("g")
         .attr("transform", 
@@ -968,7 +976,7 @@ function setup_graph() {
 
     // add the x Axis
     var xaxis = svg.append("g")
-        .attr("transform", "translate(0," + height + ")")
+        .attr("transform", "translate(0," + eheight + ")")
         .style('font-size', '9px')
         .style('font-family', font_family);
 
@@ -985,38 +993,41 @@ function setup_graph() {
       .text('Latency + Dwell Time');
 
     settings.latdwell = {
-      margin:margin, width:width, height:height,
-      svg:svg, x:x, y:y, xaxis: xaxis, yaxis: yaxis
+      margin: margin, width: width, height: height,
+      svg: svg, x: x, y: y, xaxis: xaxis, yaxis: yaxis
     }
 
   }
   
   {
+    height /= 2;
+    eheight = height - 50;
+
     var svg2p = d3.select("body").append("svg")
         .attr("class", "overlay")
         .attr("width", width + margin.left + margin.right)
-        .attr("height", height/2 + margin.top + margin.bottom)
-        .style("top", height + margin.top + margin.bottom + margin.top);
+        .attr("height", height)
+        .style("top", top);
+
+    top += height + 10;
 
     var svg2 = svg2p
       .append("g")
         .attr("transform", 
               "translate(" + margin.left + "," + margin.top + ")");
 
-    height /= 2;
-
     var hx = d3.scaleLinear()
       .range([0, width])
       .domain([0,20]);
 
     var hy = d3.scaleLinear()
-      .range([height, 0]);
+      .range([eheight, 0]);
 
     var hyp = d3.scaleLinear()
-      .range([height, 0]);
+      .range([eheight, 0]);
 
     var hxs = svg2.append('g')
-      .attr('transform', 'translate(0,'+height+')')
+      .attr('transform', 'translate(0,'+eheight+')')
       .style('font-size', '9px')
       .style('font-family', font_family);
 
@@ -1036,14 +1047,16 @@ function setup_graph() {
                   .thresholds(hx.ticks(20))
                   .value(d => d);
 
-    settings.histogram = {hist: hist, x: hx, y: hy, yp: hyp, svg: svg2, xaxis: hxs, yaxis: hys, height: height, width: width, data: []};
+    settings.histogram = {hist: hist, x: hx, y: hy, yp: hyp, svg: svg2, xaxis: hxs, yaxis: hys, height: height, width: width, margin: margin, data: []};
   }
 
   {
     var div =  d3.select("body").append("div")
         .attr("class", "overlay infopanel")
-        .attr("style", "position: absolute; width:400px; height:175px; top: 505px;");
+        .attr("style", "position: absolute; width:400px; height:"+height+"px; top: "+top+"px;");
     
+    top += height + margin.bottom;
+
     div.append('div')
       .attr('x', '100%')
       .attr('y', '1em')
@@ -1068,12 +1081,6 @@ function setup_graph() {
   return settings;
 }
 
-var mx = 0;
-
-function format_ms(x) {
-  return d3.formatPrefix(".1s", 1e-3)(x)+"s" // display as ms
-}
-
 function redraw_graph(time, data_map) {
   if (graph_settings==undefined) return;
 
@@ -1086,6 +1093,7 @@ function redraw_graph(time, data_map) {
   }
 
   var active_data = data.filter(d => d.active);
+  const DURATION = 10;
 
   {
     var settings = graph_settings.latdwell;
@@ -1095,11 +1103,11 @@ function redraw_graph(time, data_map) {
         yaxis = settings.yaxis,
         margin = settings.margin,
         svg = settings.svg,
-        height = settings.height,
+        height = settings.height - margin.top - margin.bottom,
         width = settings.width;
 
     // Scale the range of the data in the domains
-    mx = Math.max((mx || 0), d3.max(data.map(d => d.latency*1000))); // convert to ms
+    var mx = Math.max(control.conntrack.stats.max_latency, d3.max(data.map(d => d.latency*1000))); // convert to ms
     x.domain( [0, mx] );
     // Easier to follow if we don't reorder y
     y.domain( data.sort((a,b) => a.first_seen-b.first_seen).map(d => d.sat) );
@@ -1149,7 +1157,7 @@ function redraw_graph(time, data_map) {
     //Update bar widths
     chartRow.select(".bar")
       .transition()
-      .duration(10)
+      .duration(DURATION)
       .attr("class", d => d.active ? "bar active" : "bar inactive")
       .attr("height", y.bandwidth())
       .attr("width", d => x(d.latency*1000))
@@ -1158,7 +1166,7 @@ function redraw_graph(time, data_map) {
     // min/max latency
     chartRow.select(".range")
       .transition()
-      .duration(10)
+      .duration(DURATION)
       .attr("x", d => x(d.min_latency*1000))
       //.attr("opacity", 0)
       .attr("opacity", 1)
@@ -1168,8 +1176,8 @@ function redraw_graph(time, data_map) {
     //Update data labels
     chartRow.select(".label")
       //.update()
-      //.transition()
-      //.duration(10)
+      .transition()
+      .duration(DURATION)
       .attr("y", y.bandwidth()/2)
       .attr("opacity", 1)
       //.tween("text", function(d) { 
@@ -1180,7 +1188,7 @@ function redraw_graph(time, data_map) {
       // });
       .text(d => 
           d.active ? format_ms(d.latency) // display as ms
-                : d3.format(".1f")((d.last_seen - d.first_seen)/1000/60)+" min");
+                   : d3.format(".1f")((d.last_seen - d.first_seen)/1000/60)+" min");
       
     //Fade out and remove exit elements
     chartRow.exit()
@@ -1197,7 +1205,7 @@ function redraw_graph(time, data_map) {
       .transition()
       //.delay(delay)
       //.duration(900)
-      .duration(30)
+      .duration(DURATION)
       .attr("transform", function(d){ return "translate(0," + y(d.sat) + ")"; });
       
 
@@ -1229,7 +1237,7 @@ function redraw_graph(time, data_map) {
 
     latencyLine.select(".latencyLine2")
       .transition()
-      .duration(10)
+      .duration(DURATION)
       .attr("points", d => d.map(z => [x(z.latency*1000), y.bandwidth()/2 + y(z.sat)]).flat());
 
   }
@@ -1238,7 +1246,11 @@ function redraw_graph(time, data_map) {
 
   {
     var histogram = graph_settings.histogram;
-    var x = histogram.x, y = histogram.y, yp = histogram.yp;
+    var x = histogram.x, 
+        y = histogram.y, 
+        yp = histogram.yp,
+        margin = histogram.margin,
+        height = histogram.height - margin.top - margin.bottom;
 
     histogram.data.push(active_data.length);
     var formatPercent = d3.format('.0%');
@@ -1265,11 +1277,11 @@ function redraw_graph(time, data_map) {
 
     chartRow.select(".bar")
       .transition()
-      .duration(10)
+      .duration(DURATION)
       .attr("x", 1)
       .attr("transform", function(d) { return "translate(" + x(d.x0) + "," + y(d.length) + ")"; })
       .attr("width", function(d) { return Math.max(0, x(d.x1) - x(d.x0) - 1); })
-      .attr("height", function(d) { return Math.max(d.length>0 ? 2 : 0, histogram.height - y(d.length)); })
+      .attr("height", function(d) { return Math.max(d.length>0 ? 2 : 0, height - y(d.length)); })
       .style("fill", "#69b3a2");
   }
 
@@ -1285,7 +1297,7 @@ function redraw_graph(time, data_map) {
       [ 'latency (min/avg/max)', 
         (t) => 
           format_ms(t.stats.min_latency) + " / " +
-          "n/a" + " / " +
+          "-" + " / " +
           format_ms(t.stats.max_latency) ],
       [ '# satellites (min/med/max)',
         (t) => 
@@ -1312,7 +1324,7 @@ function redraw_graph(time, data_map) {
       .append("tr")
       .selectAll("td")
       .data(function(row) {
-        console.log('row/1', row);
+        //console.log('row/1', row);
         return row;
       })
       .enter()
@@ -1369,8 +1381,6 @@ function get_satellite_shape(ln, lt, sz, height) {
 }
 
 d3.select(self.frameElement).style("height", height + "px");
-
-//graph_settings = setup_graph();
 
 // random bit is to avoid caching: https://stackoverflow.com/questions/13053096/avoid-data-caching-when-using-d3-text/13054513
 d3.queue()
