@@ -95,6 +95,30 @@ const font_family = 'calibri, -apple-system, "avenir next", avenir, roboto, noto
 function calc_mn(sc, vc) { return Math.min(sc, d3.min(vc)); }
 function calc_mx(sc, vc) { return Math.max(sc, d3.max(vc)); }
 
+// https://stackoverflow.com/a/7579799
+function seconds2time(seconds) {
+  var hours   = Math.floor(seconds / 3600);
+  var minutes = Math.floor((seconds - (hours * 3600)) / 60);
+  var seconds = seconds - (hours * 3600) - (minutes * 60);
+  var time = "";
+
+  if (hours != 0) {
+    time = hours+":";
+  }
+  if (minutes != 0 || time !== "") {
+    minutes = (minutes < 10 && time !== "") ? "0"+minutes : String(minutes);
+    time += minutes+":";
+  }
+  if (time === "") {
+    time = seconds+"s";
+  }
+  else {
+    time += (seconds < 10) ? "0"+seconds : String(seconds);
+  }
+  return time;
+}
+function msec2time(ms) { return seconds2time(ms/1000); }
+
 // Controls
 const gui = new dat.GUI();
 
@@ -234,6 +258,7 @@ var DEGREES = 180 / Math.PI;
 var R_EARTH = 6378.137; // equatorial radius (km)
 var SPEED_OF_LIGHT = 299792.458; // Speed of light in km/s
 var SPEED_OF_LIGHT_FIBRE = SPEED_OF_LIGHT / 1.467; // ... estimate
+var SQUIGGLY_PATH_FACTOR = 1.5; // fudge factor for fibre latency (direct line distance is multiplied by this factor)
 
 // use the whole window to start; zoom out if you want
 const width = window.innerWidth * 0.9;
@@ -525,7 +550,7 @@ function run_iteration(time) {
   if (control.conntrack != undefined) {
     control.conntrack.update(time);
     selected_sats = control.conntrack.selected_sats;
-    redraw_graph(control.conntrack.conns);
+    redraw_graph(time, control.conntrack.conns);
   }
 
   plotshade(time, shade_context, shade_path);
@@ -546,11 +571,14 @@ function run_iteration(time) {
 
 class ConnTrack {
   constructor(gw, trm) {
+    // we don't really distinguish between terminals and gateways, except by convention
+    // the first element is considered the gateway; all that means at the moment is that we look for a pop/gw connection and estimate the ground latency for it
     this.gw = gw;
     this.trm = trm;
     this.conns = new Map();
     this.stats = {};
     this.stats.num_sats = [];
+    this.stats.start_time = undefined;
 
     // if GW is attached to a POP, estimate the ground latency
     // presumably, GWs don't move, so we only have to do this calculation once
@@ -561,8 +589,8 @@ class ConnTrack {
         [gw.posGd.longitude * DEGREES, gw.posGd.latitude * DEGREES]
       );
       var dist_km = R_EARTH * dist_rads;
-      this.ground_latency = dist_km / SPEED_OF_LIGHT_FIBRE;
-      console.log("ground latency", this.ground_latency, dist_rads, dist_km);
+      this.ground_latency = (dist_km / SPEED_OF_LIGHT_FIBRE) * SQUIGGLY_PATH_FACTOR;
+      //console.log("ground latency", this.ground_latency, dist_rads, dist_km);
     } else {
       this.ground_latency = 0;
     }
@@ -571,6 +599,7 @@ class ConnTrack {
   update(time) {
     var gw_conns = this.gw.conn, trm_conns = this.trm.conn;
 
+    // intersection of satellites connected to both gateway and terminal
     var s = new Set(gw_conns.map(x => x[0]));
     var selected_sats = trm_conns.map(x => x[0]).filter(el => s.has(el));
 
@@ -618,6 +647,7 @@ class ConnTrack {
       }
     }
 
+    if (this.stats.start_time==undefined) this.stats.start_time=time;
     this.stats.min_latency = calc_mn(this.stats.min_latency||10000, [...this.conns.values()].map(d => d.min_latency));
     this.stats.max_latency = calc_mx(this.stats.max_latency||0, [...this.conns.values()].map(d => d.max_latency));
     this.stats.num_sats.push( selected_sats.length );
@@ -1044,7 +1074,7 @@ function format_ms(x) {
   return d3.formatPrefix(".1s", 1e-3)(x)+"s" // display as ms
 }
 
-function redraw_graph(data_map) {
+function redraw_graph(time, data_map) {
   if (graph_settings==undefined) return;
 
   // temp
@@ -1086,16 +1116,6 @@ function redraw_graph(data_map) {
         .append("g")
         .attr("class", "chartRow")
         .attr("transform", "translate(0," + height + margin.top + margin.bottom + ")");
-
-    // // append the rectangles for the bar chart
-    // svg.selectAll(".bar")
-    //     .data(data)
-    //   .enter().append("rect")
-    //     .attr("class", "bar")
-    //     //.attr("x", function(d) { return x(d.latency); })
-    //     .attr("width", function(d) {return x(d.latency); } )
-    //     .attr("y", function(d) { return y(d.sat); })
-    //     .attr("height", y.bandwidth());
 
     //Add rectangles
     newRow.insert("rect")
@@ -1260,6 +1280,7 @@ function redraw_graph(data_map) {
     var ct = control.conntrack;
 
     var fields = [
+      [ 'elapsed time', (t) => msec2time(time-t.stats.start_time) ],
       [ 'ground latency', (t) => format_ms(t.ground_latency) ],
       [ 'latency (min/avg/max)', 
         (t) => 
