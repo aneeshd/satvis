@@ -7,7 +7,6 @@ body {
 
 canvas {
   position: absolute;
-  top: 0;
 }
 svg {
   position: absolute;
@@ -213,8 +212,8 @@ var SPEED_OF_LIGHT = 299792.458; // Speed of light in km/s
 var SPEED_OF_LIGHT_FIBRE = SPEED_OF_LIGHT / 1.467; // ... estimate
 
 // use the whole window to start; zoom out if you want
-const width = window.innerWidth;
-const height = window.innerHeight;
+const width = window.innerWidth * 0.9;
+const height = window.innerHeight * 0.9;
 
 // force control gui to be on top of everything else
 d3.select("div.dg.ac")
@@ -709,8 +708,9 @@ function draw_sat(sat, selected_sats) {
     sat_context.fillText(name, xy[0], xy[1]+14);
   }
 
-  if (control.FOV || detail) {
-    var night = getFootprint(pos);        
+  if (control.FOV) { // || detail) {
+    // super slow
+    var night = getFootprint(pos);
     shade_context.beginPath();
     shade_path(night);
     shade_context.fillStyle = "rgba(255,0,255,0.01)";
@@ -977,6 +977,10 @@ function setup_graph() {
 
 var mx = 0;
 
+function format_ms(x) {
+  return d3.formatPrefix(".1s", 1e-3)(x)+"s" // display as ms
+}
+
 function redraw_graph(data_map) {
   if (graph_settings==undefined) return;
 
@@ -1090,7 +1094,7 @@ function redraw_graph(data_map) {
       //   };
       // });
       .text(d => 
-          d.active ? d3.formatPrefix(".1s", 1e-3)(d.latency)+"s" // display as ms
+          d.active ? format_ms(d.latency) // display as ms
                 : d3.format(".1f")((d.last_seen - d.first_seen)/1000/60)+" min");
       
     //Fade out and remove exit elements
@@ -1120,6 +1124,29 @@ function redraw_graph(data_map) {
     // update the y Axis
     yaxis
         .call(d3.axisLeft(y));
+
+    ///////////////////////////
+    // line connecting current latency across all active satellites
+
+    var latencyLine = svg.selectAll("g.latencyLine")
+      .data([active_data])
+      .raise();
+      
+    var newLine = latencyLine
+      .enter()
+        .append("g")
+        .attr("class", "latencyLine");
+
+    newLine.insert("polyline")
+      .attr("class", "latencyLine2")
+      .attr("style", "fill:none;stroke:red;stroke-width:3")
+      .attr("opacity", 1);
+
+    latencyLine.select(".latencyLine2")
+      .transition()
+      .duration(10)
+      .attr("points", d => d.map(z => [x(z.latency*1000), y.bandwidth()/2 + y(z.sat)]).flat());
+
   }
 
   ///////////////////////////////
@@ -1132,7 +1159,6 @@ function redraw_graph(data_map) {
     histogram.data.push(hdata.length);
 
     var bins = histogram.hist(histogram.data);
-    //console.log("bins", bins);
     y.domain([0, d3.max(bins, function(d) { return d.length; })]);
     histogram.xaxis.call(d3.axisBottom(histogram.x));
     histogram.yaxis.call(d3.axisLeft(histogram.y));
@@ -1144,16 +1170,12 @@ function redraw_graph(data_map) {
       .enter()
         .append("g")
         .attr("class", "histCol");
-        //.attr("transform", "translate(0," + height + margin.top + margin.bottom + ")");
 
     //Add rectangles
     newRow.insert("rect")
       .attr("class", "bar")
       .attr("x", 0)
-      //.attr("opacity", 0)
       .attr("opacity", 1);
-      //.attr("height", y.bandwidth())
-      //.attr("width", d => x(d.latency*1000));
 
     chartRow.select(".bar")
       .transition()
