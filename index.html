@@ -104,7 +104,7 @@ class Controls {
     var f1 = gui.addFolder('Simulation Options');
     f1.add(this, 'run');
     f1.add(this, 'speed');
-    f1.add(this, 'constellation', ['satellites', 'telesat', 'oneweb', 'starlink', 'gx']).onChange(
+    f1.add(this, 'constellation', ['satellites', 'telesat', 'o3b', 'gx', 'oneweb', 'starlink']).onChange(
       () => d3.queue().defer(d3.text, this.constellation + ".txt"+ '?' + Math.floor(Math.random() * 100000))
                       .await(function(error, satellites) {
                         if (error) throw error;
