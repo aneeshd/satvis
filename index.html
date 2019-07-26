@@ -944,8 +944,15 @@ function setup_graph() {
 
     height /= 2;
 
-    var hx = d3.scaleLinear().range([0, width]).domain([0,20]);
-    var hy = d3.scaleLinear().range([height, 0]);
+    var hx = d3.scaleLinear()
+      .range([0, width])
+      .domain([0,20]);
+
+    var hy = d3.scaleLinear()
+      .range([height, 0]);
+
+    var hyp = d3.scaleLinear()
+      .range([height, 0]);
 
     var hxs = svg2.append('g')
       .attr('transform', 'translate(0,'+height+')')
@@ -968,7 +975,7 @@ function setup_graph() {
                   .thresholds(hx.ticks(20))
                   .value(d => d);
 
-    settings.histogram = {hist: hist, x: hx, y: hy, svg: svg2, xaxis: hxs, yaxis: hys, height: height, width: width, data: []};
+    settings.histogram = {hist: hist, x: hx, y: hy, yp: hyp, svg: svg2, xaxis: hxs, yaxis: hys, height: height, width: width, data: []};
   }
 
   return settings;
@@ -990,6 +997,8 @@ function redraw_graph(data_map) {
     y.sat = x[0];
     data.push(y);
   }
+
+  var active_data = data.filter(d => d.active);
 
   {
     var settings = graph_settings.latdwell;
@@ -1152,15 +1161,16 @@ function redraw_graph(data_map) {
 
   {
     var histogram = graph_settings.histogram;
-    var hdata = data.filter(d => d.active);
-    var x = histogram.x, y = histogram.y;
+    var x = histogram.x, y = histogram.y, yp = histogram.yp;
 
-    histogram.data.push(hdata.length);
+    histogram.data.push(active_data.length);
+    var formatPercent = d3.format('.0%');
 
     var bins = histogram.hist(histogram.data);
-    y.domain([0, d3.max(bins, function(d) { return d.length; })]);
-    histogram.xaxis.call(d3.axisBottom(histogram.x));
-    histogram.yaxis.call(d3.axisLeft(histogram.y));
+    y.domain([0, d3.max(bins, d => d.length)]);
+    yp.domain([0, d3.max(bins, d => d.length / histogram.data.length)]);
+    histogram.xaxis.call(d3.axisBottom(x));
+    histogram.yaxis.call(d3.axisLeft(yp).tickFormat(formatPercent));
 
     var chartRow = histogram.svg.selectAll("g.histCol")
       .data(bins);
