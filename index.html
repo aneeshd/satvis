@@ -17,6 +17,15 @@ svg {
   padding: 3px;
 }
 
+.infopanel {
+  position: absolute;
+  font-size: 9px;
+  font-family: calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif;
+  background-color: #374148;
+  opacity: 0.9;
+  padding: 3px;
+}
+
 .overlay {
   pointer-events: none;
 }
@@ -51,10 +60,21 @@ div.datetime {
   color: green;
 }
 
-text.boxtitle {
+.boxtitle {
   fill: green;
+  color: green;
   font-weight: bold;
+  text-align: right;
 }
+
+.infopanel table {
+  color: yellowgreen;
+  border: 1px solid green;
+  width: 70%;
+  text-align: left;
+  border-collapse: collapse;
+}
+
 </style>
 <body>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/4.13.0/d3.min.js"></script>
@@ -65,11 +85,15 @@ text.boxtitle {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-queue/3.0.7/d3-queue.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.6/dat.gui.min.js"></script>
 <script src="https://unpkg.com/d3-geo-zoom@1.3.1"></script>
+<script src="https://unpkg.com/simple-statistics@7.0.2/dist/simple-statistics.min.js"></script>
 <script src="satellite.js"></script>
 <script src="solar-positions.js"></script>
 <script>
 
 const font_family = 'calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif';
+
+function calc_mn(sc, vc) { return Math.min(sc, d3.min(vc)); }
+function calc_mx(sc, vc) { return Math.max(sc, d3.max(vc)); }
 
 // Controls
 const gui = new dat.GUI();
@@ -525,6 +549,8 @@ class ConnTrack {
     this.gw = gw;
     this.trm = trm;
     this.conns = new Map();
+    this.stats = {};
+    this.stats.num_sats = [];
 
     // if GW is attached to a POP, estimate the ground latency
     // presumably, GWs don't move, so we only have to do this calculation once
@@ -591,6 +617,10 @@ class ConnTrack {
         }
       }
     }
+
+    this.stats.min_latency = calc_mn(this.stats.min_latency||10000, [...this.conns.values()].map(d => d.min_latency));
+    this.stats.max_latency = calc_mx(this.stats.max_latency||0, [...this.conns.values()].map(d => d.max_latency));
+    this.stats.num_sats.push( selected_sats.length );
   }
 }
 
@@ -871,6 +901,7 @@ function _coreAngle(theta, altitude, r) {
 function setup_graph() {
 
   d3.select("body").selectAll("svg").remove();
+  d3.select("body").selectAll("div.infopanel").remove();
 
   if (control.conntrack == undefined) return;
 
@@ -976,6 +1007,32 @@ function setup_graph() {
                   .value(d => d);
 
     settings.histogram = {hist: hist, x: hx, y: hy, yp: hyp, svg: svg2, xaxis: hxs, yaxis: hys, height: height, width: width, data: []};
+  }
+
+  {
+    var div =  d3.select("body").append("div")
+        .attr("class", "overlay infopanel")
+        .attr("style", "position: absolute; width:400px; height:175px; top: 505px;");
+    
+    div.append('div')
+      .attr('x', '100%')
+      .attr('y', '1em')
+      .attr('text-anchor', 'end')
+      .attr('class', 'boxtitle')
+      .text('Connection Statistics');
+
+    var tbl = div.append('table');
+    var thead = tbl.append('thead');
+    var tbody = tbl.append('tbody');
+
+    thead.append('tr')
+      .selectAll('th')
+      .data(["", control.conntrack.gw.name + " ⇄ " + control.conntrack.trm.name])
+      .enter()
+        .append('th')
+        .text(d => d);
+    
+    settings.infodiv = {div: div, tbl: tbl, tbody: tbody};
   }
 
   return settings;
@@ -1195,6 +1252,60 @@ function redraw_graph(data_map) {
       .attr("height", function(d) { return Math.max(d.length>0 ? 2 : 0, histogram.height - y(d.length)); })
       .style("fill", "#69b3a2");
   }
+
+  ///////////////////////////////
+
+  {
+    var infodiv = graph_settings.infodiv;
+    var ct = control.conntrack;
+
+    var fields = [
+      [ 'ground latency', (t) => format_ms(t.ground_latency) ],
+      [ 'latency (min/avg/max)', 
+        (t) => 
+          format_ms(t.stats.min_latency) + " / " +
+          "n/a" + " / " +
+          format_ms(t.stats.max_latency) ],
+      [ '# satellites (min/med/max)',
+        (t) => 
+          ss.min(t.stats.num_sats) + " / " +
+          ss.median(t.stats.num_sats) + " / " +
+          ss.max(t.stats.num_sats) ],
+    ];
+
+    var gw = ct.gw;
+    var trm = ct.trm;
+
+    var data = [];
+    for (var f of fields) {
+      try {
+        var d = [ f[0], f[1](ct) ];
+        data.push(d);
+      } catch(e) {
+      }
+    }
+
+    infodiv.tbody.selectAll("tr")
+      .data(data)
+      .enter()
+      .append("tr")
+      .selectAll("td")
+      .data(function(row) {
+        console.log('row/1', row);
+        return row;
+      })
+      .enter()
+      .append("td");
+
+    data = data.flat();
+    var cells = infodiv.tbody.selectAll('td').nodes();
+    //console.log(data, cells);
+    for (i=0; i<data.length; i++) {
+      cells[i].textContent = data[i];
+    }
+    //console.log(ct.stats);
+  }
+
 }
 
 // adapted from:
