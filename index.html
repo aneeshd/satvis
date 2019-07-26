@@ -548,8 +548,8 @@ class ConnTrack {
     var s = new Set(gw_conns.map(x => x[0]));
     var selected_sats = trm_conns.map(x => x[0]).filter(el => s.has(el));
 
-    var fr = new Map( gw_conns.map(x => [x[0].name, [x[1], x[2]]]) );
-    var to = new Map( trm_conns.map(x => [x[0].name, [x[1], x[2]]]) );
+    var fr = new Map( gw_conns.map(x => [x[0].name, [x[1], x[1].rangeSat]]) );
+    var to = new Map( trm_conns.map(x => [x[0].name, [x[1], x[1].rangeSat]]) );
 
     var conns = this.conns;
     var self = this;
@@ -591,7 +591,6 @@ class ConnTrack {
         }
       }
     }
-    // console.log(this.conns);
   }
 }
 
@@ -633,7 +632,7 @@ function update_terminal(trm, gmst) {
   // calculate connectivity to each satellite
   trm.conn = satellites.map(function(sat) {
     try {
-      return [sat, satellite.ecfToLookAngles(trm.posGd, sat.ecf),  distance3d(sat.ecf, trm.ecf)]
+      return [sat, satellite.ecfToLookAngles(trm.posGd, sat.ecf)]
     } catch(e) {
       // undefined
     }
@@ -766,7 +765,7 @@ function draw_terminal(trm, selected_sats) {
 
   if (control['sat-to-ground'] || control.zen) {
     trm.conn.forEach(function(s) {
-      var sat = s[0], lookangles = s[1], dist = s[2];
+      var sat = s[0], lookangles = s[1], dist = s[1].rangeSat;
 
       if (control.zen) {
         if (!selected_sats.includes(sat)) return;
