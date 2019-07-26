@@ -683,15 +683,15 @@ function draw_sat(sat, selected_sats) {
   if (control.zen && !selected_sats.includes(sat)) return;
 
   var name = sat.name;
-  var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.4;
+  var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.7;
   var route = get_satellite_shape(ln, lt, sz, pos.height);
   var detail = false;
 
-  sat_context.fillStyle = pos.height > control.altitude_threshold ? "red" : "blue";
-  sat_context.strokeStyle = pos.height > control.altitude_threshold ? "red" : "blue";
+  sat_context.fillStyle = pos.height > control.altitude_threshold ? "#bda0bc" : "#03cea4";
+  sat_context.strokeStyle = pos.height > control.altitude_threshold ? "#bda0bc" : "#03cea4";
   if (selected_sats.indexOf(sat)!=-1) {
-    sat_context.fillStyle = "olive";
-    sat_context.strokeStyle = "olive";
+    sat_context.fillStyle = "#824670";
+    sat_context.strokeStyle = "#824670";
     detail = true;
   }
   sat_context.lineWidth = 0.25;
@@ -806,7 +806,7 @@ function draw_pop(name, pop) {
   var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.2*r;
   var route = get_terminal_shape(ln, lt, sz, pos.height);
 
-  sat_context.fillStyle = "yellow";
+  sat_context.fillStyle = "#345995";
   sat_context.beginPath();
   sat_path(route);
   sat_context.fill();
@@ -814,7 +814,7 @@ function draw_pop(name, pop) {
   // POP to GW connections
   if (1) {
     pop.gw.forEach(function(gw) {
-      if (gw!=control._from_trm && gw!=control._to_trm) return;
+      if (gw!=control._from_trm) return;
 
       route = {type: "LineString", "coordinates": [
         [pos.longitude * DEGREES, pos.latitude * DEGREES],
