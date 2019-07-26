@@ -93,6 +93,20 @@ div.datetime {
 
 const font_family = 'calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif';
 
+const CONSTELLATIONS = [
+  'satellites', 
+  'telesat', 
+  'telesat-a', 
+  'telesat-b', 
+  'telesat-c', 
+  'telesat-d', 
+  'o3b', 
+  'gx', 
+  'oneweb', 
+  'oneweb-a', 
+  'starlink'
+];
+
 function calc_mn(sc, vc) { return Math.min(sc, d3.min(vc)); }
 function calc_mx(sc, vc) { return Math.max(sc, d3.max(vc)); }
 
@@ -156,7 +170,7 @@ class Controls {
     var f1 = gui.addFolder('Simulation Options');
     f1.add(this, 'run');
     f1.add(this, 'speed');
-    f1.add(this, 'constellation', ['satellites', 'telesat', 'o3b', 'gx', 'oneweb', 'starlink']).onChange(
+    f1.add(this, 'constellation', CONSTELLATIONS).onChange(
       () => d3.queue().defer(d3.text, this.constellation + ".txt"+ '?' + Math.floor(Math.random() * 100000))
                       .await(function(error, satellites) {
                         if (error) throw error;
@@ -768,7 +782,7 @@ function draw_sat(sat, selected_sats) {
     var xy = projection([ln, lt]);
     sat_context.font = "9px sans-serif";
     sat_context.textAlign = "center";
-    sat_context.fillText(name, xy[0], xy[1]+14);
+    sat_context.fillText(name, xy[0], xy[1]+30);
   }
 
   if (control.FOV) { // || detail) {
@@ -934,7 +948,7 @@ function _coreAngle(theta, altitude, r) {
 // http://bl.ocks.org/charlesdguthrie/11356441
 function setup_graph() {
 
-  d3.select("body").selectAll("svg").remove();
+  d3.select("body").selectAll("svg.overlay").remove();
   d3.select("body").selectAll("div.infopanel").remove();
 
   if (control.conntrack == undefined) return;
@@ -1292,6 +1306,7 @@ function redraw_graph(time, data_map) {
     var ct = control.conntrack;
 
     var fields = [
+      [ 'satellites in constellation', (t) => satellites.length ],
       [ 'elapsed time', (t) => msec2time(time-t.stats.start_time) ],
       [ 'ground latency', (t) => format_ms(t.ground_latency) ],
       [ 'latency (min/avg/max)', 

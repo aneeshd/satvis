@@ -33,4 +33,7 @@ def parse_file(f):
 
 import sys
 filename = sys.argv[1]
-parse_file( open(filename, 'r') )
+if filename == '-':
+    parse_file( sys.stdin )
+else:
+    parse_file( open(filename, 'r') )
