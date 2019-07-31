@@ -5,3 +5,4 @@ lat	lng	name	minel
 34.0522	-118.2437	Los Angeles	20
 19.0760	72.8777	Mumbai	20
 55.7558	37.6173	Moscow	20
+44.1674	-80.9310	Allan Park	10
