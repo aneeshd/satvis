@@ -343,6 +343,7 @@ function load_world(world_detailed, world) {
     }
     qid = setTimeout(function() {
       plotglobe(world_detailed, graticule, map_context, map_path);
+      run_iteration();
       callback(null);
       qid = undefined;
     }, 0);
@@ -434,6 +435,7 @@ function load_terminals(data) {
     //console.log(line);
     if (line.lat==undefined || line.lng==undefined) return;
     if (!line.name) return;
+    if (line.lat.charAt(0)=='#') return;
     var t = {
       id: name,
       name: line.name || name,
@@ -466,7 +468,6 @@ function load_pops(data) {
 
   data.forEach(function(line) {
     //var name = 'T_'+terminals.length;
-    console.log(line);
     if (line.lat==undefined || line.lng==undefined) return;
     if (!line.name) return;
     var p = new POP(line.name);
@@ -529,17 +530,18 @@ function load_satellites(data) {
   control.load_conntrack();
 }
 
-function run() {
-  var current_time = new Date().getTime();
+var current_time = new Date().getTime();
 
+function run() {
   d3.timer(function(elapsed) {
     if (!control.run) return;
-    var time = new Date(current_time+=control.speed);
-    run_iteration(time);
+    run_iteration();
   });
 }
 
-function run_iteration(time) {
+function run_iteration() {
+  var time = new Date(current_time+=control.speed);
+
   stats_context.clearRect(0,0,width,height);
   stats_context.globalAlpha = 0;
   stats_context.drawImage(sat_canvas.node(),0,0);
@@ -548,31 +550,36 @@ function run_iteration(time) {
 
   title.text(timeFormat(time));
 
-  var gmst = satellite.gstimeFromDate(
-      time.getUTCFullYear(),
-      time.getUTCMonth() + 1, // Note, this function requires months in range 1-12.
-      time.getUTCDate(),
-      time.getUTCHours(),
-      time.getUTCMinutes(),
-      time.getUTCSeconds()
-  );
+  if (control.run) {
+    var gmst = satellite.gstimeFromDate(
+        time.getUTCFullYear(),
+        time.getUTCMonth() + 1, // Note, this function requires months in range 1-12.
+        time.getUTCDate(),
+        time.getUTCHours(),
+        time.getUTCMinutes(),
+        time.getUTCSeconds()
+    );
 
-  satellites.forEach(function(d) {
-    update_sat(d, time, gmst);
-  });
+    satellites.forEach(function(d) {
+      update_sat(d, time, gmst);
+    });
 
-  terminals.forEach(function(d) {
-    update_terminal(d, gmst);
-  });
+    terminals.forEach(function(d) {
+      update_terminal(d, gmst);
+    });
 
-  satellites.forEach(function(d) {
-    update_sat2sat(d);
-  });
+    satellites.forEach(function(d) {
+      update_sat2sat(d);
+    });
+
+    if (control.conntrack != undefined) {
+      control.conntrack.update(time);
+    }
+  }
 
   // selected_sats: satellites connected to terminals being probed
   var selected_sats = [];
   if (control.conntrack != undefined) {
-    control.conntrack.update(time);
     selected_sats = control.conntrack.selected_sats;
     redraw_graph(time, control.conntrack.conns);
   }
