@@ -1177,8 +1177,6 @@ function redraw_graph(time, data_map) {
     newRow.insert("rect")
       .attr("class", "bar active")
       .attr("x", d => x2(d.first_seen/1000/60))
-      //.attr("opacity", 0)
-      .attr("opacity", 1)
       .attr("height", y.bandwidth()/2)
       .attr("width", d => x2(d.last_seen/1000/60) - x2(d.first_seen/1000/60));
 
@@ -1186,8 +1184,6 @@ function redraw_graph(time, data_map) {
     newRow.insert("rect")
       .attr("class", "range")
       .attr("x", d => x(d.min_latency*1000))
-      //.attr("opacity", 0)
-      .attr("opacity", 1)
       .attr("height", y.bandwidth()/6)
       .attr("width", d => x((d.max_latency-d.min_latency)*1000));
 
@@ -1196,11 +1192,8 @@ function redraw_graph(time, data_map) {
       .attr("class", "label")
       .attr("y", y.bandwidth()/2)
       .attr("x", 0)
-      //.attr("opacity", 0)
-      .attr("opacity", 1)
       .attr("dy", ".35em")
-      .attr("dx", "0.5em")
-      ;//.text(d => d.latency);
+      .attr("dx", "0.5em");
 
     //Update bar widths
     chartRow.select(".bar")
@@ -1209,16 +1202,13 @@ function redraw_graph(time, data_map) {
       .attr("class", d => d.active ? "bar active" : "bar inactive")
       .attr("height", y.bandwidth())
       .attr("x", d => x2(d.first_seen/1000/60))
-      .attr("width", d => x2(d.last_seen/1000/60) - x2(d.first_seen/1000/60))
-      .attr("opacity", 1);
+      .attr("width", d => x2(d.last_seen/1000/60) - x2(d.first_seen/1000/60));
 
     // min/max latency
     chartRow.select(".range")
       .transition()
       .duration(DURATION)
       .attr("x", d => x(d.min_latency*1000))
-      //.attr("opacity", 0)
-      .attr("opacity", 1)
       .attr("height", y.bandwidth()/3)
       .attr("width", d => x((d.max_latency-d.min_latency)*1000));
 
@@ -1228,16 +1218,7 @@ function redraw_graph(time, data_map) {
       .transition()
       .duration(DURATION)
       .attr("y", y.bandwidth()/2)
-      .attr("opacity", 1)
-      //.tween("text", function(d) { 
-      //   var i = d3.interpolate(+this.textContent.replace(/\,/g,''), +d.latency);
-      //   return function(t) {
-      //     this.textContent = Math.round(i(t));
-      //   };
-      // });
-      .text(d => 
-          /*d.active ? format_ms(d.latency) // display as ms
-                   :*/ d3.format(".1f")((d.last_seen - d.first_seen)/1000/60)+" min");
+      .text(d => d3.format(".1f")((d.last_seen - d.first_seen)/1000/60)+" min");
       
     //Fade out and remove exit elements
     chartRow.exit()
@@ -1256,7 +1237,6 @@ function redraw_graph(time, data_map) {
       //.duration(900)
       .duration(DURATION)
       .attr("transform", function(d){ return "translate(0," + y(d.sat) + ")"; });
-      
 
     // update the x Axis
     xaxis
@@ -1325,8 +1305,7 @@ function redraw_graph(time, data_map) {
     //Add rectangles
     newRow.insert("rect")
       .attr("class", "bar")
-      .attr("x", 0)
-      .attr("opacity", 1);
+      .attr("x", 0);
 
     chartRow.select(".bar")
       .transition()
@@ -1378,7 +1357,6 @@ function redraw_graph(time, data_map) {
       .append("tr")
       .selectAll("td")
       .data(function(row) {
-        //console.log('row/1', row);
         return row;
       })
       .enter()
