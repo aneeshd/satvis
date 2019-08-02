@@ -913,7 +913,7 @@ function draw_pop(name, pop) {
   // POP to GW connections
   if (1) {
     pop.gw.forEach(function(gw) {
-      if (gw!=control._from_trm) return;
+      //if (gw!=control._from_trm) return;
 
       route = {type: "LineString", "coordinates": [
         [pos.longitude * DEGREES, pos.latitude * DEGREES],
