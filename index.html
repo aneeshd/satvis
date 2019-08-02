@@ -76,6 +76,12 @@ div.datetime {
   border-collapse: collapse;
 }
 
+polyline.latencyLine2 {
+  fill: none;
+  stroke: aquamarine;
+  stroke-width:3;
+  opacity: 0.5;
+}
 </style>
 <body>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/4.13.0/d3.min.js"></script>
@@ -664,7 +670,7 @@ class ConnTrack {
         if (s.inactive_time == undefined) {
           s.inactive_time = new Date();
         }
-        if (nu - s.inactive_time > 1000) {
+        if (nu - s.inactive_time > 5000) {
           // remove after 5s wall time
           this.conns.delete(satname);
         }
@@ -976,6 +982,8 @@ function setup_graph() {
 
     var x = d3.scaleLinear()
               .range([0, width - margin.right ]);
+    var x2 = d3.scaleLinear()
+              .range([0, width - margin.right ]);
 
     // append the svg object to the body of the page
     // append a 'group' element to 'svg'
@@ -1000,6 +1008,10 @@ function setup_graph() {
         .style('font-size', '9px')
         .style('font-family', font_family);
 
+    var xaxis2 = svg.append("g")
+      .attr("transform", "translate(0,0)")
+      .style('font-size', '9px');
+
     // add the y Axis
     var yaxis = svg.append("g")
         .style('font-size', '9px')
@@ -1013,10 +1025,10 @@ function setup_graph() {
       .text('Latency + Dwell Time');
 
     settings.latdwell = {
-      margin: margin, width: width, height: height,
-      svg: svg, x: x, y: y, xaxis: xaxis, yaxis: yaxis
+	    margin:margin, width:width, height:height,
+	    svg:svg, x:x, y:y, xaxis: xaxis, yaxis: yaxis, x2: x2, xaxis2: xaxis2
     }
-
+  
   }
   
   {
@@ -1098,7 +1110,7 @@ function setup_graph() {
     settings.infodiv = {div: div, tbl: tbl, tbody: tbody};
   }
 
-  return settings;
+	return settings;
 }
 
 function redraw_graph(time, data_map) {
@@ -1120,18 +1132,25 @@ function redraw_graph(time, data_map) {
     var x = settings.x,
         y = settings.y,
         xaxis = settings.xaxis,
+        x2 = settings.x2,
+        xaxis2 = settings.xaxis2,
         yaxis = settings.yaxis,
         margin = settings.margin,
         svg = settings.svg,
         height = settings.height - margin.top - margin.bottom,
         width = settings.width;
 
-    // Scale the range of the data in the domains
-    var mx = Math.max(control.conntrack.stats.max_latency, d3.max(data.map(d => d.latency*1000))); // convert to ms
-    x.domain( [0, mx] );
-    // Easier to follow if we don't reorder y
+    // Bottom x-axis: latency
+    var mx = Math.max(control.conntrack.stats.max_latency*1000, d3.max(data.map(d => d.latency*1000))); // convert to ms
+    x.domain( [0, mx] ).nice();
+
+    // Top x-axis: first_seen to last_seen (axis not shown); convert to minutes
+    var mn2 = d3.min( data.map(d => d.first_seen/1000/60) );
+    var mx2 = d3.max( data.map(d => d.last_seen/1000/60) );
+    x2.domain( [mn2-5, mx2] ); // leave 5 minutes for disappearing satellites
+
+    // Sort bars by first_seen time
     y.domain( data.sort((a,b) => a.first_seen-b.first_seen).map(d => d.sat) );
-    //y.domain( data.map(d => d.sat) );
 
     //Bind new data to chart rows 
 
@@ -1143,16 +1162,16 @@ function redraw_graph(time, data_map) {
       .enter()
         .append("g")
         .attr("class", "chartRow")
-        .attr("transform", "translate(0," + height + margin.top + margin.bottom + ")");
+        .attr("transform", function(d){ return "translate(0," + y(d.sat) + ")"; });
 
     //Add rectangles
     newRow.insert("rect")
-      .attr("class", "bar")
-      .attr("x", 0)
+      .attr("class", "bar active")
+      .attr("x", d => x2(d.first_seen/1000/60))
       //.attr("opacity", 0)
       .attr("opacity", 1)
-      .attr("height", y.bandwidth())
-      .attr("width", d => x(d.latency*1000));
+      .attr("height", y.bandwidth()/2)
+      .attr("width", d => x2(d.last_seen/1000/60) - x2(d.first_seen/1000/60));
 
     // min/max latency
     newRow.insert("rect")
@@ -1160,7 +1179,7 @@ function redraw_graph(time, data_map) {
       .attr("x", d => x(d.min_latency*1000))
       //.attr("opacity", 0)
       .attr("opacity", 1)
-      .attr("height", 5)
+      .attr("height", y.bandwidth()/6)
       .attr("width", d => x((d.max_latency-d.min_latency)*1000));
 
     //Add value labels
@@ -1180,7 +1199,8 @@ function redraw_graph(time, data_map) {
       .duration(DURATION)
       .attr("class", d => d.active ? "bar active" : "bar inactive")
       .attr("height", y.bandwidth())
-      .attr("width", d => x(d.latency*1000))
+      .attr("x", d => x2(d.first_seen/1000/60))
+      .attr("width", d => x2(d.last_seen/1000/60) - x2(d.first_seen/1000/60))
       .attr("opacity", 1);
 
     // min/max latency
@@ -1207,8 +1227,8 @@ function redraw_graph(time, data_map) {
       //   };
       // });
       .text(d => 
-          d.active ? format_ms(d.latency) // display as ms
-                   : d3.format(".1f")((d.last_seen - d.first_seen)/1000/60)+" min");
+          /*d.active ? format_ms(d.latency) // display as ms
+                   :*/ d3.format(".1f")((d.last_seen - d.first_seen)/1000/60)+" min");
       
     //Fade out and remove exit elements
     chartRow.exit()
@@ -1234,6 +1254,11 @@ function redraw_graph(time, data_map) {
         .attr("transform", "translate(0," + height + ")")
         .call(d3.axisBottom(x));
 
+    // Numbers on this scale are not useful; don't bother showing it
+    // xaxis2
+    //     .attr("transform", "translate(0,0)")
+    //     .call(d3.axisTop(x2));
+
     // update the y Axis
     yaxis
         .call(d3.axisLeft(y));
@@ -1252,13 +1277,12 @@ function redraw_graph(time, data_map) {
 
     newLine.insert("polyline")
       .attr("class", "latencyLine2")
-      .attr("style", "fill:none;stroke:red;stroke-width:3")
       .attr("opacity", 1);
 
     latencyLine.select(".latencyLine2")
       .transition()
       .duration(DURATION)
-      .attr("points", d => d.map(z => [x(z.latency*1000), y.bandwidth()/2 + y(z.sat)]).flat());
+      .attr("points", d => d.map(z => [x(z.latency*1000), y.bandwidth()/6 + y(z.sat)]).flat());
 
   }
 
