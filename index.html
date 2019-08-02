@@ -648,18 +648,24 @@ class ConnTrack {
         dst[key] = src[key];
       }
     }
+
+    var nu = new Date();
+
     for (const satname of this.conns.keys()) {
       var s = this.conns.get(satname);
       if (data.has(satname)) {
         s.active = true;
-        s.inactive_count = 0;
+        s.inactive_time = undefined;
         s.min_latency = Math.min(s.min_latency, s.latency);
         s.max_latency = Math.max(s.max_latency, s.latency);
         s.last_seen = time;
       } else {
         s.active = false;
-        s.inactive_count += 1;
-        if (s.inactive_count==100) {
+        if (s.inactive_time == undefined) {
+          s.inactive_time = new Date();
+        }
+        if (nu - s.inactive_time > 1000) {
+          // remove after 5s wall time
           this.conns.delete(satname);
         }
       }
@@ -969,7 +975,7 @@ function setup_graph() {
               .padding(0.1);
 
     var x = d3.scaleLinear()
-              .range([0, width]);
+              .range([0, width - margin.right ]);
 
     // append the svg object to the body of the page
     // append a 'group' element to 'svg'
