@@ -17,12 +17,19 @@ svg {
   padding: 3px;
 }
 
-.infopanel {
+div.overlay {
   position: absolute;
+  opacity: 0.9;
+}
+
+/* svg.overlay {
+  background: black;
+} */
+
+.infopanel {
   font-size: 9px;
   font-family: calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif;
   background-color: #374148;
-  opacity: 0.9;
   padding: 3px;
 }
 
@@ -51,6 +58,9 @@ g.tick line {
 }
 g.tick text {
   fill: green;
+}
+path.domain {
+  stroke: green;
 }
 
 div.datetime {
@@ -82,7 +92,36 @@ polyline.latencyLine2 {
   stroke-width:3;
   opacity: 0.5;
 }
+
+i.fa-satellite-dish {
+  font-size: 16px;
+  color: steelblue;
+  transform: translate(-50%, -50%);
+}
+
+i.fa-circle {
+  font-size: 16px;
+  color: navy;
+  transform: translate(-50%, -50%);
+}
+
+i.fa-satellite {
+  font-size: 18px;
+  color: mediumvioletred;
+  transform: translate(-50%, -50%);
+}
+
+i.selected-terminal {
+  font-size: 24px;
+  color: purple;
+}
+
+i.selected-pop {
+  font-size: 24px;
+  color: crimson;
+}
 </style>
+<link rel="stylesheet" type="text/css" href="https://kit-pro.fontawesome.com/releases/v5.10.0/css/pro.min.css">
 <body>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/4.13.0/d3.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-geo/1.9.1/d3-geo.min.js"></script>
@@ -286,9 +325,9 @@ var SPEED_OF_LIGHT = 299792.458; // Speed of light in km/s
 var SPEED_OF_LIGHT_FIBRE = SPEED_OF_LIGHT / 1.467; // ... estimate
 var SQUIGGLY_PATH_FACTOR = 1.5; // fudge factor for fibre latency (direct line distance is multiplied by this factor)
 
-// use the whole window to start; zoom out if you want
-const width = window.innerWidth * 0.9;
-const height = window.innerHeight * 0.9;
+// does not use the whole window to start (can't remember why); zooming will fill the window
+var width = window.innerWidth * 0.9;
+var height = window.innerHeight * 0.9;
 
 // force control gui to be on top of everything else
 d3.select("div.dg.ac")
@@ -296,7 +335,7 @@ d3.select("div.dg.ac")
   .style("opacity", 0.9);
 
 var title = d3.select("body").append("div")
-  .attr("class", "overlay datetime");
+  .attr("class", "datetime");
 
 var graticule = d3.geoGraticule();
 
@@ -319,6 +358,12 @@ var shade_canvas = d3.select("body").append("canvas")
     .attr("width", width)
     .attr("height", height);
 
+var gw_overlay = d3.select("body").append("div")
+    .attr("class", "overlay gw")
+    .style("overflow", "hidden")
+    .style("width", width+"px")
+    .style("height", height+"px");
+
 var map_context = map_canvas.node().getContext("2d");
 var sat_context = sat_canvas.node().getContext("2d");
 var stats_context = stats_canvas.node().getContext("2d");
@@ -336,7 +381,31 @@ var graph_settings = undefined;
 var projection;
 var q = d3.queue();
 
+window.addEventListener("resize", redraw);
+
+var world_info = undefined;
+
 function load_world(world_detailed, world) {
+  world_info = [world_detailed, world];
+  redraw();
+}
+
+function redraw() {
+
+  if (world_info==undefined) return;
+
+  var world_detailed = world_info[0],
+      world = world_info[1];
+
+  width = Math.floor( window.innerWidth );
+  height = Math.floor( window.innerHeight );
+
+  d3.selectAll("canvas")
+    .attr("height", height)
+    .attr("width", width);
+  d3.selectAll("div.gw")
+    .style("width", width+"px")
+    .style("height", height+"px");
 
   var qid = undefined;
   function delayed_draw(callback) {
@@ -345,6 +414,7 @@ function load_world(world_detailed, world) {
     }
     qid = setTimeout(function() {
       plotglobe(world_detailed, graticule, map_context, map_path);
+      d3.select("div.gw").style("display","block");
       run_iteration();
       callback(null);
       qid = undefined;
@@ -384,6 +454,7 @@ function load_world(world_detailed, world) {
     .projection(projection)
     .onMove(function() {
       // draw low resolution map while dragging, and then a detailed one when done
+      d3.select("div.gw").style("display","none");
       plotglobe(world, graticule, map_context, map_path);
       sat_context.clearRect(0,0,width,height);
       q.defer(delayed_draw);
@@ -485,6 +556,17 @@ function load_pops(data) {
   //control.reload_terminals(terminals);
 }
 
+// TODO
+class Satellite {
+  constructor(name) {
+    this.name = name;
+    this.tle1 = undefined;
+    this.tle2 = undefined;
+    this.satrec = undefined;
+    this.trail = undefined; // https://github.com/bmschmidt/D3-trail
+  }
+}
+
 function load_satellites(data) {
   satellites = [];
 
@@ -523,10 +605,9 @@ function load_satellites(data) {
     }
     skip1 = false;
     skip2 = false;
-    //console.log(line, line.charAt(0));
-    satellites.push({
-      name: line.trim()
-    });
+
+    var sat = new Satellite(line.trim());
+    satellites.push(sat);
   });
 
   control.load_conntrack();
@@ -591,6 +672,8 @@ function run_iteration() {
   satellites.forEach(function(d) {
     draw_sat(d, selected_sats);
   });
+
+  draw_terminals_and_pops(terminals, pops);
 
   terminals.forEach(function(d) {
     draw_terminal(d, selected_sats);
@@ -747,6 +830,8 @@ function update_terminal(trm, gmst) {
 }
 
 function update_sat2sat(sat) {
+  if (!control['sat-to-sat']) return;
+
   sat.conn = satellites.map(function(s) {
     if (sat==s) return undefined;
     if (sat==undefined || s==undefined) return undefined;
@@ -781,9 +866,14 @@ function draw_sat(sat, selected_sats) {
 
   if (control.zen && !selected_sats.includes(sat)) return;
 
+  var scale = 1.0;
+  try {
+    scale = 175.0 / projection.scale();
+  } catch (e) {
+  }
+
   var name = sat.name;
-  var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.7;
-  var route = get_satellite_shape(ln, lt, sz, pos.height);
+  var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=Math.max(0.7*scale, 0.02);
   var detail = false;
 
   sat_context.fillStyle = pos.height > control.altitude_threshold ? "#bda0bc" : "#03cea4";
@@ -792,7 +882,10 @@ function draw_sat(sat, selected_sats) {
     sat_context.fillStyle = "#824670";
     sat_context.strokeStyle = "#824670";
     detail = true;
+    sz = Math.max(0.7*scale*3, 0.02*3);
   }
+
+  var route = get_satellite_shape(ln, lt, sz, pos.height);
   sat_context.lineWidth = 0.25;
   sat_context.beginPath();
   sat_path(route);
@@ -846,17 +939,35 @@ function draw_sat(sat, selected_sats) {
   }
 };
 
+function draw_terminals_and_pops(terminals, pops) {
+  var drawfn = function(data, container, icon, icon2) {
+    var p = d3.select(container)
+              .selectAll("i."+icon)
+              .data(data);
+
+    p.enter()
+     .append("i")
+     .attr("class", icon2+" "+icon)
+     .style("position", "absolute");
+
+    d3.select(container).selectAll("i."+icon)
+      .classed("selected-terminal", d => (d==control._from_trm || d==control._to_trm) ? true : false)
+      .classed("selected-pop", d => d==(control._from_trm && control._from_trm.pop) ? true : false)
+      .style("left", d => projection([d.posGd.longitude * DEGREES, d.posGd.latitude * DEGREES])[0] + "px")
+      .style("top", d => projection([d.posGd.longitude * DEGREES, d.posGd.latitude * DEGREES])[1] + "px");
+  };
+
+  drawfn(terminals, "div.gw", "fa-satellite-dish", "fas");
+  drawfn([...pops.values()], "div.gw", "fa-circle", "far");
+
+  // slow: drawfn(satellites, "div.gw", "fa-satellite", "fas");
+}
+
 function draw_terminal(trm, selected_sats) {
   var pos = trm.posGd;
   var r = trm==control._from_trm ? 6 : trm==control._to_trm ? 6 : 2;
 
   var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.2*r;
-  var route = get_terminal_shape(ln, lt, sz, pos.height);
-
-  sat_context.fillStyle = "purple";
-  sat_context.beginPath();
-  sat_path(route);
-  sat_context.fill();
 
   if (control.zen) {
     if (trm!=control._from_trm && trm!=control._to_trm) return;
@@ -903,12 +1014,6 @@ function draw_pop(name, pop) {
   var r = 3;
 
   var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.2*r;
-  var route = get_terminal_shape(ln, lt, sz, pos.height);
-
-  sat_context.fillStyle = "#345995";
-  sat_context.beginPath();
-  sat_path(route);
-  sat_context.fill();
 
   // POP to GW connections
   if (1) {
