@@ -326,8 +326,8 @@ var SPEED_OF_LIGHT_FIBRE = SPEED_OF_LIGHT / 1.467; // ... estimate
 var SQUIGGLY_PATH_FACTOR = 1.5; // fudge factor for fibre latency (direct line distance is multiplied by this factor)
 
 // does not use the whole window to start (can't remember why); zooming will fill the window
-var width = window.innerWidth * 0.9;
-var height = window.innerHeight * 0.9;
+var width = Math.floor( window.innerWidth * 0.9 );
+var height = Math.floor( window.innerHeight * 0.9 );
 
 // force control gui to be on top of everything else
 d3.select("div.dg.ac")
@@ -364,10 +364,16 @@ var gw_overlay = d3.select("body").append("div")
     .style("width", width+"px")
     .style("height", height+"px");
 
+var hidden_canvas = d3.select("body").append("canvas")
+    .style("display", "none")
+    .attr("width", width)
+    .attr("height", height);
+
 var map_context = map_canvas.node().getContext("2d");
 var sat_context = sat_canvas.node().getContext("2d");
 var stats_context = stats_canvas.node().getContext("2d");
 var shade_context = shade_canvas.node().getContext("2d");
+var hidden_context = hidden_canvas.node().getContext("2d");
 var sat_path, stats_path, shade_path;
 
 var timeFormat = d3.timeFormat("%Y-%m-%d %H:%M:%S");
@@ -413,7 +419,7 @@ function redraw() {
       clearTimeout(qid);
     }
     qid = setTimeout(function() {
-      plotglobe(world_detailed, graticule, map_context, map_path);
+      plotglobe(world_detailed, graticule, map_context, map_path, true);
       d3.select("div.gw").style("display","block");
       run_iteration();
       callback(null);
@@ -428,6 +434,7 @@ function redraw() {
 
   projection = 
     //d3.geoOrthographic()
+    //d3.geoEquirectangular()
     d3.geoProjection(d3.geoMtFlatPolarQuarticRaw)
     //d3.geoProjection(d3.geoKavrayskiy7Raw)
       .fitSize([width*0.8, height*0.8], topojson.feature(world, world.objects.land))
@@ -455,28 +462,64 @@ function redraw() {
     .onMove(function() {
       // draw low resolution map while dragging, and then a detailed one when done
       d3.select("div.gw").style("display","none");
-      plotglobe(world, graticule, map_context, map_path);
+      plotglobe(world, graticule, map_context, map_path, false);
       sat_context.clearRect(0,0,width,height);
       q.defer(delayed_draw);
     })
     .northUp(true)
     (map_canvas.node());
 
-  plotglobe(world_detailed, graticule, map_context, map_path);
+  plotglobe(world_detailed, graticule, map_context, map_path, true);
 }
 
-function plotglobe(world, graticule, context, path) {
+var image = new Image;
+image.crossOrigin = "Anonymous";
+//image.src = 'http://techslides.com/demos/d3/data/natural.jpg';
+//image.src = 'natural.jpg';
+//image.src = 'world.jpg';
+//image.src = 'https://upload.wikimedia.org/wikipedia/commons/8/8f/Whole_world_-_land_and_oceans_12000.jpg';
+//image.src = 'Whole_world_-_land_and_oceans_12000.jpg';
+// image.src = 'https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73751/world.topo.bathy.200407.3x5400x2700.jpg'
+image.src = 'world.topo.bathy.200407.3x5400x2700.jpg'
+image.hidden = true;
+
+function plotglobe(world, graticule, context, path, detailed) {
   context.clearRect(0,0,width,height);
 
-  context.fillStyle = "rgb(9,26,43";
-  context.beginPath();
-  path({type: 'Sphere'});
-  context.fill();
+  // var path = d3.geoPath()
+  //     .projection(projection)
+  //     .context(context);
 
-  context.fillStyle = "rgb(248,244,240)";
-  context.beginPath();
-  path(topojson.feature(world, world.objects.land));
-  context.fill();
+  if (!detailed || (detailed && !image.complete)) {
+    context.fillStyle = "rgb(9,26,43)";
+    context.beginPath();
+    path({type: 'Sphere'});
+    context.fill();
+
+    context.fillStyle = "rgb(248,244,240)";
+    context.beginPath();
+    path(topojson.feature(world, world.objects.land));
+    context.fill();
+  } else {
+    // context.strokeStyle = "red";
+    // context.beginPath();
+    // path({type: 'Sphere'});
+    // context.lineWidth = 10;
+    // context.stroke();
+  }
+
+  if (detailed) {
+    if (image.complete) {
+      //console.log('projecting image');
+      // context.beginPath();
+      // path({type: 'Sphere'});
+      // context.clip();
+      on_image_load();
+    } else {
+      console.log('image not available, defer');
+      image.onload = (() => plotglobe(world, graticule, context, path, detailed));
+    }
+  }
 
   context.strokeStyle = "rgb(214,210,213)";
   context.beginPath();
@@ -494,6 +537,48 @@ function plotglobe(world, graticule, context, path) {
   path(graticule.outline());
   context.lineWidth = 1;
   context.stroke();
+}
+
+// Adapted from http://techslides.com/d3-globe-with-canvas-webgl-and-three-js
+function on_image_load() {
+
+  var dx = image.width,
+      dy = image.height;
+
+  hidden_canvas
+    .attr("width", dx)
+    .attr("height", dy);
+
+  var context = hidden_context;
+
+  context.drawImage(image, 0, 0, dx, dy);
+  console.log('image size', dx, dy);
+  console.log('target size', width, height);
+
+  var sourceData = context.getImageData(0, 0, dx, dy).data,
+      target = map_context.createImageData(width, height),
+      targetData = target.data;
+
+  //this get it done in terms of laying the right tiles on the right projection!
+  for (var y = 0, i = -1; y < height; ++y) {
+    //console.log(y);
+    for (var x = 0; x < width; ++x) {
+      var p = projection.invert([x, y]), λ = p[0], φ = p[1];
+      if (λ > 180 || λ < -180 || φ > 90 || φ < -90) { i += 4; continue; }
+      var q = ((90 - φ) / 180 * dy | 0) * dx + ((180 + λ) / 360 * dx | 0) << 2;
+      targetData[++i] = sourceData[q];
+      targetData[++i] = sourceData[++q];
+      targetData[++i] = sourceData[++q];
+      targetData[++i] = 255;
+    }
+  }
+
+  map_context.clearRect(0, 0, width, height);
+  map_context.putImageData(target, 0, 0);
+  // context.putImageData(target, 0, 0);
+  // var imageObj = new Image();
+  // imageObj.onload = (() => map_context.drawImage(imageObj, 0, 0));
+  // imageObj.src = hidden_canvas.node().toDataURL("image/png");
 }
 
 function load_terminals(data) {
@@ -613,7 +698,7 @@ function load_satellites(data) {
   control.load_conntrack();
 }
 
-var current_time = new Date().getTime();
+  var current_time = new Date().getTime();
 
 function run() {
   d3.timer(function(elapsed) {
@@ -623,7 +708,7 @@ function run() {
 }
 
 function run_iteration() {
-  var time = new Date(current_time+=control.speed);
+    var time = new Date(current_time+=control.speed);
 
   stats_context.clearRect(0,0,width,height);
   stats_context.globalAlpha = 0;
@@ -634,26 +719,26 @@ function run_iteration() {
   title.text(timeFormat(time));
 
   if (control.run) {
-    var gmst = satellite.gstimeFromDate(
-        time.getUTCFullYear(),
-        time.getUTCMonth() + 1, // Note, this function requires months in range 1-12.
-        time.getUTCDate(),
-        time.getUTCHours(),
-        time.getUTCMinutes(),
-        time.getUTCSeconds()
-    );
+  var gmst = satellite.gstimeFromDate(
+      time.getUTCFullYear(),
+      time.getUTCMonth() + 1, // Note, this function requires months in range 1-12.
+      time.getUTCDate(),
+      time.getUTCHours(),
+      time.getUTCMinutes(),
+      time.getUTCSeconds()
+  );
 
-    satellites.forEach(function(d) {
-      update_sat(d, time, gmst);
-    });
+  satellites.forEach(function(d) {
+    update_sat(d, time, gmst);
+  });
 
-    terminals.forEach(function(d) {
-      update_terminal(d, gmst);
-    });
+  terminals.forEach(function(d) {
+    update_terminal(d, gmst);
+  });
 
-    satellites.forEach(function(d) {
-      update_sat2sat(d);
-    });
+  satellites.forEach(function(d) {
+    update_sat2sat(d);
+  });
 
     if (control.conntrack != undefined) {
       control.conntrack.update(time);
@@ -1139,10 +1224,10 @@ function setup_graph() {
       .text('Latency + Dwell Time');
 
     settings.latdwell = {
-	    margin:margin, width:width, height:height,
+      margin: margin, width: width, height: height,
 	    svg:svg, x:x, y:y, xaxis: xaxis, yaxis: yaxis, x2: x2, xaxis2: xaxis2
     }
-  
+
   }
   
   {
@@ -1224,7 +1309,7 @@ function setup_graph() {
     settings.infodiv = {div: div, tbl: tbl, tbody: tbody};
   }
 
-	return settings;
+  return settings;
 }
 
 function redraw_graph(time, data_map) {
@@ -1342,7 +1427,7 @@ function redraw_graph(time, data_map) {
       //.duration(900)
       .duration(DURATION)
       .attr("transform", function(d){ return "translate(0," + y(d.sat) + ")"; });
-
+      
     // update the x Axis
     xaxis
         .attr("transform", "translate(0," + height + ")")
@@ -1492,7 +1577,7 @@ function plotshade(time, context, path) {
 
     context.beginPath();
     path(night);
-    context.fillStyle = "rgba(0,0,255,0.1)";
+    context.fillStyle = "rgba(50,50,50,0.6)";
     context.fill();
   }
 }
