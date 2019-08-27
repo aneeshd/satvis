@@ -348,11 +348,6 @@ var sat_canvas = d3.select("body").append("canvas")
     .attr("width", width)
     .attr("height", height);
 
-var stats_canvas = d3.select("body").append("canvas")
-    .attr("class", "overlay")
-    .attr("width", width)
-    .attr("height", height);
-
 var shade_canvas = d3.select("body").append("canvas")
     .attr("class", "overlay")
     .attr("width", width)
@@ -365,16 +360,21 @@ var gw_overlay = d3.select("body").append("div")
     .style("height", height+"px");
 
 var hidden_canvas = d3.select("body").append("canvas")
-    .style("display", "none")
-    .attr("width", width)
-    .attr("height", height);
+  .style("display", "none")
+  .attr("width", width)
+  .attr("height", height);
+
+var hidden_canvas2 = d3.select("body").append("canvas")
+  .style("display", "none")
+  .attr("width", width)
+  .attr("height", height);
 
 var map_context = map_canvas.node().getContext("2d");
 var sat_context = sat_canvas.node().getContext("2d");
-var stats_context = stats_canvas.node().getContext("2d");
 var shade_context = shade_canvas.node().getContext("2d");
 var hidden_context = hidden_canvas.node().getContext("2d");
-var sat_path, stats_path, shade_path;
+var hidden_context2 = hidden_canvas2.node().getContext("2d");
+var sat_path, shade_path;
 
 var timeFormat = d3.timeFormat("%Y-%m-%d %H:%M:%S");
 
@@ -453,10 +453,6 @@ function redraw() {
     .projection(projection)
     .context(sat_context);
 
-  stats_path = d3.geoPath()
-    .projection(projection)
-    .context(stats_context);
-
   d3.geoZoom()
     .projection(projection)
     .onMove(function() {
@@ -480,7 +476,7 @@ image.crossOrigin = "Anonymous";
 //image.src = 'https://upload.wikimedia.org/wikipedia/commons/8/8f/Whole_world_-_land_and_oceans_12000.jpg';
 //image.src = 'Whole_world_-_land_and_oceans_12000.jpg';
 // image.src = 'https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73751/world.topo.bathy.200407.3x5400x2700.jpg'
-image.src = 'world.topo.bathy.200407.3x5400x2700.jpg'
+image.src = 'Whole_world_-_land_and_oceans_5000.jpg'; //'world.topo.bathy.200407.3x5400x2700.jpg'
 image.hidden = true;
 
 function plotglobe(world, graticule, context, path, detailed) {
@@ -510,10 +506,6 @@ function plotglobe(world, graticule, context, path, detailed) {
 
   if (detailed) {
     if (image.complete) {
-      //console.log('projecting image');
-      // context.beginPath();
-      // path({type: 'Sphere'});
-      // context.clip();
       on_image_load();
     } else {
       console.log('image not available, defer');
@@ -549,20 +541,39 @@ function on_image_load() {
     .attr("width", dx)
     .attr("height", dy);
 
-  var context = hidden_context;
+  hidden_context.drawImage(image, 0, 0, dx, dy);
 
-  context.drawImage(image, 0, 0, dx, dy);
-  console.log('image size', dx, dy);
-  console.log('target size', width, height);
+  // draw the sphere on a hidden context, and use that as a mask
+  hidden_canvas2
+    .attr("width", width)
+    .attr("height", height);
 
-  var sourceData = context.getImageData(0, 0, dx, dy).data,
+  var path = d3.geoPath(projection);
+  var sphere = {type:"Sphere"};
+  hidden_context2.clearRect(0,0,width,height);
+  hidden_context2.beginPath();
+  d3.geoPath().projection(projection).context(hidden_context2)(sphere);
+  hidden_context2.fillStyle='red';
+  hidden_context2.fill();
+  var i = hidden_context2.getImageData(0,0,width,height);
+  var srcMask = i.data;
+
+  var sourceData = hidden_context.getImageData(0, 0, dx, dy).data,
       target = map_context.createImageData(width, height),
       targetData = target.data;
 
   //this get it done in terms of laying the right tiles on the right projection!
   for (var y = 0, i = -1; y < height; ++y) {
-    //console.log(y);
     for (var x = 0; x < width; ++x) {
+      // is point within the sphere? if not, just fill it in with a background colour
+      if (srcMask[i+1] != 255) {
+        targetData[++i] = 25;
+        targetData[++i] = 25;
+        targetData[++i] = 25;
+        targetData[++i] = 255;
+        continue;
+      }
+
       var p = projection.invert([x, y]), λ = p[0], φ = p[1];
       if (λ > 180 || λ < -180 || φ > 90 || φ < -90) { i += 4; continue; }
       var q = ((90 - φ) / 180 * dy | 0) * dx + ((180 + λ) / 360 * dx | 0) << 2;
@@ -575,10 +586,6 @@ function on_image_load() {
 
   map_context.clearRect(0, 0, width, height);
   map_context.putImageData(target, 0, 0);
-  // context.putImageData(target, 0, 0);
-  // var imageObj = new Image();
-  // imageObj.onload = (() => map_context.drawImage(imageObj, 0, 0));
-  // imageObj.src = hidden_canvas.node().toDataURL("image/png");
 }
 
 function load_terminals(data) {
@@ -710,11 +717,8 @@ function run() {
 function run_iteration() {
     var time = new Date(current_time+=control.speed);
 
-  stats_context.clearRect(0,0,width,height);
-  stats_context.globalAlpha = 0;
-  stats_context.drawImage(sat_canvas.node(),0,0);
   sat_context.clearRect(0,0,width,height);
-  sat_context.drawImage(stats_canvas.node(),0,0);
+  sat_context.drawImage(sat_canvas.node(),0,0);
 
   title.text(timeFormat(time));
 
@@ -936,7 +940,6 @@ function update_sat2sat(sat) {
   // sort by distance (closest to furthest)
   .sort((a,b) => a[1]-b[1])
   ;
-  //console.log(sat.conn);
 }
 
 function draw_sat(sat, selected_sats) {
@@ -984,7 +987,7 @@ function draw_sat(sat, selected_sats) {
     sat_context.fillText(name, xy[0], xy[1]+30);
   }
 
-  if (control.FOV) { // || detail) {
+  if (control.FOV) {
     // super slow
     var night = getFootprint(pos);
     shade_context.beginPath();
