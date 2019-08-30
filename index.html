@@ -473,17 +473,6 @@ function redraw() {
   plotglobe(world_detailed, graticule, map_context, map_path, true);
 }
 
-var image = new Image;
-image.crossOrigin = "Anonymous";
-//image.src = 'http://techslides.com/demos/d3/data/natural.jpg';
-//image.src = 'natural.jpg';
-//image.src = 'world.jpg';
-//image.src = 'https://upload.wikimedia.org/wikipedia/commons/8/8f/Whole_world_-_land_and_oceans_12000.jpg';
-//image.src = 'Whole_world_-_land_and_oceans_12000.jpg';
-// image.src = 'https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73751/world.topo.bathy.200407.3x5400x2700.jpg'
-image.src = 'Whole_world_-_land_and_oceans_5000.jpg'; //'world.topo.bathy.200407.3x5400x2700.jpg'
-image.hidden = true;
-
 function plotglobe(world, graticule, context, path, detailed) {
   context.clearRect(0,0,width,height);
 
@@ -1623,6 +1612,11 @@ d3.queue()
   .defer(d3.text, no_cache("satellites.txt"))
   .await(function(error, world_detailed, world, pops, gateways, terminals, satellites) {
     if (error) throw error;
+    image = new Image();
+    image.crossOrigin = "Anonymous";
+    // forked from LeszekSwirski
+    image.src = 'https://raw.githubusercontent.com/aneeshd/earth-wallpaper/master/images/world.topo.bathy.200412.3x5400x2700.jpg';
+    image.hidden = true;
     load_world(world_detailed, world);
     control.create_controls();
     load_pops(pops);
