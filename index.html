@@ -157,6 +157,9 @@ const CONSTELLATIONS = [
 function calc_mn(sc, vc) { return Math.min(sc, d3.min(vc)); }
 function calc_mx(sc, vc) { return Math.max(sc, d3.max(vc)); }
 
+// random bit is to avoid caching: https://stackoverflow.com/questions/13053096/avoid-data-caching-when-using-d3-text/13054513
+function no_cache(x) { return x + '?' + Math.floor(Math.random() * 100000); }
+
 // https://stackoverflow.com/a/7579799
 function seconds2time(seconds) {
   var hours   = Math.floor(seconds / 3600);
@@ -218,14 +221,14 @@ class Controls {
     f1.add(this, 'run');
     f1.add(this, 'speed');
     f1.add(this, 'constellation', CONSTELLATIONS).onChange(
-      () => d3.queue().defer(d3.text, this.constellation + ".txt"+ '?' + Math.floor(Math.random() * 100000))
+      () => d3.queue().defer(d3.text, no_cache(this.constellation + ".txt"))
                       .await(function(error, satellites) {
                         if (error) throw error;
                         load_satellites(satellites);
                       }));
 
     f1.add(this, 'pops', ['pops', 'gx-mmp']).onChange(
-      () => d3.queue().defer(d3.tsv, this.pops + ".txt"+ '?' + Math.floor(Math.random() * 100000))
+      () => d3.queue().defer(d3.tsv, no_cache(this.pops + ".txt"))
                       .await(function(error, pops) {
                         if (error) throw error;
                         load_pops(pops);
@@ -233,16 +236,16 @@ class Controls {
 
     // reload both "gateways" and "user terminals" because we don't currently distinguish between the two
     f1.add(this, 'gateways', ['gateways', 'gx-sas']).onChange(
-      () => d3.queue().defer(d3.tsv, this.gateways + ".txt"+ '?' + Math.floor(Math.random() * 100000))
-                      .defer(d3.tsv, this.users + ".txt"+ '?' + Math.floor(Math.random() * 100000))
+      () => d3.queue().defer(d3.tsv, no_cache(this.gateways + ".txt"))
+                      .defer(d3.tsv, no_cache(this.users + ".txt"))
                       .await(function(error, gateways, users) {
                         if (error) throw error;
                         load_terminals(gateways.concat(users));
                       }));
 
     f1.add(this, 'users', ['terminals']).onChange(
-      () => d3.queue().defer(d3.tsv, this.gateways + ".txt"+ '?' + Math.floor(Math.random() * 100000))
-                      .defer(d3.tsv, this.users + ".txt"+ '?' + Math.floor(Math.random() * 100000))
+      () => d3.queue().defer(d3.tsv, no_cache(this.gateways + ".txt"))
+                      .defer(d3.tsv, no_cache(this.users + ".txt"))
                       .await(function(error, gateways, users) {
                         if (error) throw error;
                         load_terminals(gateways.concat(users));
@@ -326,8 +329,8 @@ var SPEED_OF_LIGHT_FIBRE = SPEED_OF_LIGHT / 1.467; // ... estimate
 var SQUIGGLY_PATH_FACTOR = 1.5; // fudge factor for fibre latency (direct line distance is multiplied by this factor)
 
 // does not use the whole window to start (can't remember why); zooming will fill the window
-var width = window.innerWidth * 0.9;
-var height = window.innerHeight * 0.9;
+var width = Math.floor( window.innerWidth * 0.9 );
+var height = Math.floor( window.innerHeight * 0.9 );
 
 // force control gui to be on top of everything else
 d3.select("div.dg.ac")
@@ -348,11 +351,6 @@ var sat_canvas = d3.select("body").append("canvas")
     .attr("width", width)
     .attr("height", height);
 
-var stats_canvas = d3.select("body").append("canvas")
-    .attr("class", "overlay")
-    .attr("width", width)
-    .attr("height", height);
-
 var shade_canvas = d3.select("body").append("canvas")
     .attr("class", "overlay")
     .attr("width", width)
@@ -364,11 +362,22 @@ var gw_overlay = d3.select("body").append("div")
     .style("width", width+"px")
     .style("height", height+"px");
 
+var hidden_canvas = d3.select("body").append("canvas")
+  .style("display", "none")
+  .attr("width", width)
+  .attr("height", height);
+
+var hidden_canvas2 = d3.select("body").append("canvas")
+  .style("display", "none")
+  .attr("width", width)
+  .attr("height", height);
+
 var map_context = map_canvas.node().getContext("2d");
 var sat_context = sat_canvas.node().getContext("2d");
-var stats_context = stats_canvas.node().getContext("2d");
 var shade_context = shade_canvas.node().getContext("2d");
-var sat_path, stats_path, shade_path;
+var hidden_context = hidden_canvas.node().getContext("2d");
+var hidden_context2 = hidden_canvas2.node().getContext("2d");
+var sat_path, shade_path;
 
 var timeFormat = d3.timeFormat("%Y-%m-%d %H:%M:%S");
 
@@ -384,6 +393,8 @@ var q = d3.queue();
 window.addEventListener("resize", redraw);
 
 var world_info = undefined;
+
+var image = undefined;
 
 function load_world(world_detailed, world) {
   world_info = [world_detailed, world];
@@ -413,7 +424,7 @@ function redraw() {
       clearTimeout(qid);
     }
     qid = setTimeout(function() {
-      plotglobe(world_detailed, graticule, map_context, map_path);
+      plotglobe(world_detailed, graticule, map_context, map_path, true);
       d3.select("div.gw").style("display","block");
       run_iteration();
       callback(null);
@@ -428,6 +439,7 @@ function redraw() {
 
   projection = 
     //d3.geoOrthographic()
+    //d3.geoEquirectangular()
     d3.geoProjection(d3.geoMtFlatPolarQuarticRaw)
     //d3.geoProjection(d3.geoKavrayskiy7Raw)
       .fitSize([width*0.8, height*0.8], topojson.feature(world, world.objects.land))
@@ -446,37 +458,54 @@ function redraw() {
     .projection(projection)
     .context(sat_context);
 
-  stats_path = d3.geoPath()
-    .projection(projection)
-    .context(stats_context);
-
   d3.geoZoom()
     .projection(projection)
     .onMove(function() {
       // draw low resolution map while dragging, and then a detailed one when done
       d3.select("div.gw").style("display","none");
-      plotglobe(world, graticule, map_context, map_path);
+      plotglobe(world, graticule, map_context, map_path, false);
       sat_context.clearRect(0,0,width,height);
       q.defer(delayed_draw);
     })
     .northUp(true)
     (map_canvas.node());
 
-  plotglobe(world_detailed, graticule, map_context, map_path);
+  plotglobe(world_detailed, graticule, map_context, map_path, true);
 }
 
-function plotglobe(world, graticule, context, path) {
+function plotglobe(world, graticule, context, path, detailed) {
   context.clearRect(0,0,width,height);
 
-  context.fillStyle = "rgb(9,26,43";
-  context.beginPath();
-  path({type: 'Sphere'});
-  context.fill();
+  // var path = d3.geoPath()
+  //     .projection(projection)
+  //     .context(context);
 
-  context.fillStyle = "rgb(248,244,240)";
-  context.beginPath();
-  path(topojson.feature(world, world.objects.land));
-  context.fill();
+  if (!detailed || (detailed && !image.complete)) {
+    context.fillStyle = "rgb(9,26,43)";
+    context.beginPath();
+    path({type: 'Sphere'});
+    context.fill();
+
+    context.fillStyle = "rgb(248,244,240)";
+    context.beginPath();
+    path(topojson.feature(world, world.objects.land));
+    context.fill();
+  } else {
+    // context.strokeStyle = "red";
+    // context.beginPath();
+    // path({type: 'Sphere'});
+    // context.lineWidth = 10;
+    // context.stroke();
+  }
+
+  if (detailed) {
+    if (image.complete) {
+      on_image_load();
+    } else {
+      console.log('image not available, defer');
+      image.onload = (() => plotglobe(world, graticule, context, path, detailed));
+    }
+  }
 
   context.strokeStyle = "rgb(214,210,213)";
   context.beginPath();
@@ -494,6 +523,63 @@ function plotglobe(world, graticule, context, path) {
   path(graticule.outline());
   context.lineWidth = 1;
   context.stroke();
+}
+
+// Adapted from http://techslides.com/d3-globe-with-canvas-webgl-and-three-js
+function on_image_load() {
+
+  var dx = image.width,
+      dy = image.height;
+
+  hidden_canvas
+    .attr("width", dx)
+    .attr("height", dy);
+
+  hidden_context.drawImage(image, 0, 0, dx, dy);
+
+  // draw the sphere on a hidden context, and use that as a mask
+  hidden_canvas2
+    .attr("width", width)
+    .attr("height", height);
+
+  var path = d3.geoPath(projection);
+  var sphere = {type:"Sphere"};
+  hidden_context2.clearRect(0,0,width,height);
+  hidden_context2.beginPath();
+  d3.geoPath().projection(projection).context(hidden_context2)(sphere);
+  hidden_context2.fillStyle='red';
+  hidden_context2.fill();
+  var i = hidden_context2.getImageData(0,0,width,height);
+  var srcMask = i.data;
+
+  var sourceData = hidden_context.getImageData(0, 0, dx, dy).data,
+      target = map_context.createImageData(width, height),
+      targetData = target.data;
+
+  //this get it done in terms of laying the right tiles on the right projection!
+  for (var y = 0, i = -1; y < height; ++y) {
+    for (var x = 0; x < width; ++x) {
+      // is point within the sphere? if not, just fill it in with a background colour
+      if (srcMask[i+1] != 255) {
+        targetData[++i] = 25;
+        targetData[++i] = 25;
+        targetData[++i] = 25;
+        targetData[++i] = 255;
+        continue;
+      }
+
+      var p = projection.invert([x, y]), λ = p[0], φ = p[1];
+      if (λ > 180 || λ < -180 || φ > 90 || φ < -90) { i += 4; continue; }
+      var q = ((90 - φ) / 180 * dy | 0) * dx + ((180 + λ) / 360 * dx | 0) << 2;
+      targetData[++i] = sourceData[q];
+      targetData[++i] = sourceData[++q];
+      targetData[++i] = sourceData[++q];
+      targetData[++i] = 255;
+    }
+  }
+
+  map_context.clearRect(0, 0, width, height);
+  map_context.putImageData(target, 0, 0);
 }
 
 function load_terminals(data) {
@@ -613,7 +699,7 @@ function load_satellites(data) {
   control.load_conntrack();
 }
 
-var current_time = new Date().getTime();
+  var current_time = new Date().getTime();
 
 function run() {
   d3.timer(function(elapsed) {
@@ -623,37 +709,34 @@ function run() {
 }
 
 function run_iteration() {
-  var time = new Date(current_time+=control.speed);
+    var time = new Date(current_time+=control.speed);
 
-  stats_context.clearRect(0,0,width,height);
-  stats_context.globalAlpha = 0;
-  stats_context.drawImage(sat_canvas.node(),0,0);
   sat_context.clearRect(0,0,width,height);
-  sat_context.drawImage(stats_canvas.node(),0,0);
+  sat_context.drawImage(sat_canvas.node(),0,0);
 
   title.text(timeFormat(time));
 
   if (control.run) {
-    var gmst = satellite.gstimeFromDate(
-        time.getUTCFullYear(),
-        time.getUTCMonth() + 1, // Note, this function requires months in range 1-12.
-        time.getUTCDate(),
-        time.getUTCHours(),
-        time.getUTCMinutes(),
-        time.getUTCSeconds()
-    );
+  var gmst = satellite.gstimeFromDate(
+      time.getUTCFullYear(),
+      time.getUTCMonth() + 1, // Note, this function requires months in range 1-12.
+      time.getUTCDate(),
+      time.getUTCHours(),
+      time.getUTCMinutes(),
+      time.getUTCSeconds()
+  );
 
-    satellites.forEach(function(d) {
-      update_sat(d, time, gmst);
-    });
+  satellites.forEach(function(d) {
+    update_sat(d, time, gmst);
+  });
 
-    terminals.forEach(function(d) {
-      update_terminal(d, gmst);
-    });
+  terminals.forEach(function(d) {
+    update_terminal(d, gmst);
+  });
 
-    satellites.forEach(function(d) {
-      update_sat2sat(d);
-    });
+  satellites.forEach(function(d) {
+    update_sat2sat(d);
+  });
 
     if (control.conntrack != undefined) {
       control.conntrack.update(time);
@@ -851,7 +934,6 @@ function update_sat2sat(sat) {
   // sort by distance (closest to furthest)
   .sort((a,b) => a[1]-b[1])
   ;
-  //console.log(sat.conn);
 }
 
 function draw_sat(sat, selected_sats) {
@@ -899,7 +981,7 @@ function draw_sat(sat, selected_sats) {
     sat_context.fillText(name, xy[0], xy[1]+30);
   }
 
-  if (control.FOV) { // || detail) {
+  if (control.FOV) {
     // super slow
     var night = getFootprint(pos);
     shade_context.beginPath();
@@ -1139,10 +1221,10 @@ function setup_graph() {
       .text('Latency + Dwell Time');
 
     settings.latdwell = {
-	    margin:margin, width:width, height:height,
+      margin: margin, width: width, height: height,
 	    svg:svg, x:x, y:y, xaxis: xaxis, yaxis: yaxis, x2: x2, xaxis2: xaxis2
     }
-  
+
   }
   
   {
@@ -1224,7 +1306,7 @@ function setup_graph() {
     settings.infodiv = {div: div, tbl: tbl, tbody: tbody};
   }
 
-	return settings;
+  return settings;
 }
 
 function redraw_graph(time, data_map) {
@@ -1342,7 +1424,7 @@ function redraw_graph(time, data_map) {
       //.duration(900)
       .duration(DURATION)
       .attr("transform", function(d){ return "translate(0," + y(d.sat) + ")"; });
-
+      
     // update the x Axis
     xaxis
         .attr("transform", "translate(0," + height + ")")
@@ -1492,7 +1574,7 @@ function plotshade(time, context, path) {
 
     context.beginPath();
     path(night);
-    context.fillStyle = "rgba(0,0,255,0.1)";
+    context.fillStyle = "rgba(50,50,50,0.6)";
     context.fill();
   }
 }
@@ -1519,18 +1601,22 @@ function get_satellite_shape(ln, lt, sz, height) {
 
 d3.select(self.frameElement).style("height", height + "px");
 
-// random bit is to avoid caching: https://stackoverflow.com/questions/13053096/avoid-data-caching-when-using-d3-text/13054513
 d3.queue()
   // slow when zooming/panning, but much better resolution: 
   .defer(d3.json, "https://raw.githubusercontent.com/d3/d3.github.com/master/world-50m.v1.json")
   // low resolution map:
   .defer(d3.json, "https://raw.githubusercontent.com/d3/d3.github.com/master/world-110m.v1.json")
-  .defer(d3.tsv, "pops.txt"+ '?' + Math.floor(Math.random() * 100000))
-  .defer(d3.tsv, "gateways.txt"+ '?' + Math.floor(Math.random() * 100000))
-  .defer(d3.tsv, "terminals.txt"+ '?' + Math.floor(Math.random() * 100000))
-  .defer(d3.text, "satellites.txt"+ '?' + Math.floor(Math.random() * 100000))
+  .defer(d3.tsv, no_cache("pops.txt"))
+  .defer(d3.tsv, no_cache("gateways.txt"))
+  .defer(d3.tsv, no_cache("terminals.txt"))
+  .defer(d3.text, no_cache("satellites.txt"))
   .await(function(error, world_detailed, world, pops, gateways, terminals, satellites) {
     if (error) throw error;
+    image = new Image();
+    image.crossOrigin = "Anonymous";
+    // forked from LeszekSwirski
+    image.src = 'https://raw.githubusercontent.com/aneeshd/earth-wallpaper/master/images/world.topo.bathy.200412.3x5400x2700.jpg';
+    image.hidden = true;
     load_world(world_detailed, world);
     control.create_controls();
     load_pops(pops);
