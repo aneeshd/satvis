@@ -157,6 +157,9 @@ const CONSTELLATIONS = [
 function calc_mn(sc, vc) { return Math.min(sc, d3.min(vc)); }
 function calc_mx(sc, vc) { return Math.max(sc, d3.max(vc)); }
 
+// random bit is to avoid caching: https://stackoverflow.com/questions/13053096/avoid-data-caching-when-using-d3-text/13054513
+function no_cache(x) { return x + '?' + Math.floor(Math.random() * 100000); }
+
 // https://stackoverflow.com/a/7579799
 function seconds2time(seconds) {
   var hours   = Math.floor(seconds / 3600);
@@ -218,14 +221,14 @@ class Controls {
     f1.add(this, 'run');
     f1.add(this, 'speed');
     f1.add(this, 'constellation', CONSTELLATIONS).onChange(
-      () => d3.queue().defer(d3.text, this.constellation + ".txt"+ '?' + Math.floor(Math.random() * 100000))
+      () => d3.queue().defer(d3.text, no_cache(this.constellation + ".txt"))
                       .await(function(error, satellites) {
                         if (error) throw error;
                         load_satellites(satellites);
                       }));
 
     f1.add(this, 'pops', ['pops', 'gx-mmp']).onChange(
-      () => d3.queue().defer(d3.tsv, this.pops + ".txt"+ '?' + Math.floor(Math.random() * 100000))
+      () => d3.queue().defer(d3.tsv, no_cache(this.pops + ".txt"))
                       .await(function(error, pops) {
                         if (error) throw error;
                         load_pops(pops);
@@ -233,16 +236,16 @@ class Controls {
 
     // reload both "gateways" and "user terminals" because we don't currently distinguish between the two
     f1.add(this, 'gateways', ['gateways', 'gx-sas']).onChange(
-      () => d3.queue().defer(d3.tsv, this.gateways + ".txt"+ '?' + Math.floor(Math.random() * 100000))
-                      .defer(d3.tsv, this.users + ".txt"+ '?' + Math.floor(Math.random() * 100000))
+      () => d3.queue().defer(d3.tsv, no_cache(this.gateways + ".txt"))
+                      .defer(d3.tsv, no_cache(this.users + ".txt"))
                       .await(function(error, gateways, users) {
                         if (error) throw error;
                         load_terminals(gateways.concat(users));
                       }));
 
     f1.add(this, 'users', ['terminals']).onChange(
-      () => d3.queue().defer(d3.tsv, this.gateways + ".txt"+ '?' + Math.floor(Math.random() * 100000))
-                      .defer(d3.tsv, this.users + ".txt"+ '?' + Math.floor(Math.random() * 100000))
+      () => d3.queue().defer(d3.tsv, no_cache(this.gateways + ".txt"))
+                      .defer(d3.tsv, no_cache(this.users + ".txt"))
                       .await(function(error, gateways, users) {
                         if (error) throw error;
                         load_terminals(gateways.concat(users));
@@ -390,6 +393,8 @@ var q = d3.queue();
 window.addEventListener("resize", redraw);
 
 var world_info = undefined;
+
+var image = undefined;
 
 function load_world(world_detailed, world) {
   world_info = [world_detailed, world];
@@ -1607,16 +1612,15 @@ function get_satellite_shape(ln, lt, sz, height) {
 
 d3.select(self.frameElement).style("height", height + "px");
 
-// random bit is to avoid caching: https://stackoverflow.com/questions/13053096/avoid-data-caching-when-using-d3-text/13054513
 d3.queue()
   // slow when zooming/panning, but much better resolution: 
   .defer(d3.json, "https://raw.githubusercontent.com/d3/d3.github.com/master/world-50m.v1.json")
   // low resolution map:
   .defer(d3.json, "https://raw.githubusercontent.com/d3/d3.github.com/master/world-110m.v1.json")
-  .defer(d3.tsv, "pops.txt"+ '?' + Math.floor(Math.random() * 100000))
-  .defer(d3.tsv, "gateways.txt"+ '?' + Math.floor(Math.random() * 100000))
-  .defer(d3.tsv, "terminals.txt"+ '?' + Math.floor(Math.random() * 100000))
-  .defer(d3.text, "satellites.txt"+ '?' + Math.floor(Math.random() * 100000))
+  .defer(d3.tsv, no_cache("pops.txt"))
+  .defer(d3.tsv, no_cache("gateways.txt"))
+  .defer(d3.tsv, no_cache("terminals.txt"))
+  .defer(d3.text, no_cache("satellites.txt"))
   .await(function(error, world_detailed, world, pops, gateways, terminals, satellites) {
     if (error) throw error;
     load_world(world_detailed, world);
