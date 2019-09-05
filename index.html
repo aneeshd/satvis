@@ -217,6 +217,7 @@ class Controls {
     this['low-altitude'] = true;
     this['high-altitude'] = true;
     this.background = 12; // winter
+    this.cables = true;
 
     this.from_trm = "undefined";
     this.to_trm = "undefined";
@@ -277,6 +278,7 @@ class Controls {
     f2a.add(this, 'sat-to-ground');
     f2a.add(this, 'sat-to-sat');
     f2a.add(this, 'shade');
+    f2a.add(this, 'cables').onChange(() => plot_globe_with_defaults());
     f2a.close();
     f2.open();
     this.f2 = f2;
@@ -410,8 +412,8 @@ var world_info = undefined;
 
 var image = undefined;
 
-function load_world(world_detailed, world) {
-  world_info = [world_detailed, world];
+function load_world(world_detailed, world, cables, cable_ls) {
+  world_info = [world_detailed, world, cables, cable_ls];
   redraw();
 }
 
@@ -535,6 +537,20 @@ function plotglobe(world, graticule, context, path, detailed) {
   path(graticule.outline());
   context.lineWidth = 1;
   context.stroke();
+
+  if (control.cables) {
+    context.strokeStyle = "rgba(200,200,200,0.5)";
+    context.beginPath();
+    path(world_info[2]);
+    context.lineWidth = 2;
+    context.stroke();
+
+    context.strokeStyle = "rgba(0,100,100,0.5)";
+    context.beginPath();
+    path(world_info[3]);
+    context.lineWidth = 2;
+    context.stroke();
+  }
 }
 
 function plot_globe_with_defaults() {
@@ -1618,14 +1634,16 @@ d3.queue()
   .defer(d3.tsv, no_cache("gateways.txt"))
   .defer(d3.tsv, no_cache("terminals.txt"))
   .defer(d3.text, no_cache("satellites.txt"))
-  .await(function(error, world_detailed, world, pops, gateways, terminals, satellites) {
+  .defer(d3.json, "https://raw.githubusercontent.com/telegeography/www.submarinecablemap.com/master/public/api/v2/cable/cable-geo.json")
+  .defer(d3.json, "https://raw.githubusercontent.com/telegeography/www.submarinecablemap.com/master/public/api/v2/landing-point/landing-point-geo.json")
+  .await(function(error, world_detailed, world, pops, gateways, terminals, satellites, cables, cable_ls) {
     if (error) throw error;
     image = new Image();
     image.crossOrigin = "Anonymous";
     // forked from LeszekSwirski
     image.src = 'https://raw.githubusercontent.com/aneeshd/earth-wallpaper/master/images/world.topo.bathy.200412.3x5400x2700.jpg';
     image.hidden = true;
-    load_world(world_detailed, world);
+    load_world(world_detailed, world, cables, cable_ls);
     control.create_controls();
     load_pops(pops);
     load_terminals(gateways.concat(terminals));
