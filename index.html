@@ -160,6 +160,13 @@ function calc_mx(sc, vc) { return Math.max(sc, d3.max(vc)); }
 // random bit is to avoid caching: https://stackoverflow.com/questions/13053096/avoid-data-caching-when-using-d3-text/13054513
 function no_cache(x) { return x + '?' + Math.floor(Math.random() * 100000); }
 
+// https://dev.to/ycmjason/how-to-create-range-in-javascript-539i
+function* range(start, end) {
+    yield start;
+    if (start === end) return;
+    yield* range(start + 1, end);
+}
+
 // https://stackoverflow.com/a/7579799
 function seconds2time(seconds) {
   var hours   = Math.floor(seconds / 3600);
@@ -209,6 +216,7 @@ class Controls {
     this.altitude_threshold = 1100;
     this['low-altitude'] = true;
     this['high-altitude'] = true;
+    this.background = 12; // winter
 
     this.from_trm = "undefined";
     this.to_trm = "undefined";
@@ -256,14 +264,20 @@ class Controls {
 
     var f2 = gui.addFolder('Display Options');
     f2.add(this, 'zen');
-    f2.add(this, 'satellite names');
-    f2.add(this, 'sat-to-ground');
-    f2.add(this, 'sat-to-sat');
-    f2.add(this, 'shade');
     // f2.add(this, 'FOV');
     // f2.add(this, 'altitude_threshold');
     // f2.add(this, 'low-altitude');//.onChange(enabled => d3.selectAll('.lowaltitude').style('display', enabled ? null : 'none'));
     // f2.add(this, 'high-altitude');//.onChange(enabled => d3.selectAll('.highaltitude').style('display', enabled ? null : 'none'));
+    var f2a = f2.addFolder('Layers');
+    f2a.add(this, 'background', [...range(1, 12)]).onChange(function () {
+      image.src = 'https://raw.githubusercontent.com/aneeshd/earth-wallpaper/master/images/world.topo.bathy.2004' + String(control.background).padStart(2, '0') + '.3x5400x2700.jpg';
+      plot_globe_with_defaults();
+    });
+    f2a.add(this, 'satellite names');
+    f2a.add(this, 'sat-to-ground');
+    f2a.add(this, 'sat-to-sat');
+    f2a.add(this, 'shade');
+    f2a.close();
     f2.open();
     this.f2 = f2;
     // gui.remember(this);
@@ -314,7 +328,7 @@ class POP {
   constructor(name) {
     this.name = name;
     this.gw = [];
-    console.log('Created POP', name);
+    //console.log('Created POP', name);
   }
 }
 
@@ -377,7 +391,7 @@ var sat_context = sat_canvas.node().getContext("2d");
 var shade_context = shade_canvas.node().getContext("2d");
 var hidden_context = hidden_canvas.node().getContext("2d");
 var hidden_context2 = hidden_canvas2.node().getContext("2d");
-var sat_path, shade_path;
+var sat_path, shade_path, map_path;
 
 var timeFormat = d3.timeFormat("%Y-%m-%d %H:%M:%S");
 
@@ -438,15 +452,17 @@ function redraw() {
   }
 
   projection = 
-    //d3.geoOrthographic()
+    //d3.geoOrthographic() 3d-view: clipping does not work properly yet
     //d3.geoEquirectangular()
+    //d3.geoMercator()
     d3.geoProjection(d3.geoMtFlatPolarQuarticRaw)
+    //d3.geoMtFlatPolarQuartic()
     //d3.geoProjection(d3.geoKavrayskiy7Raw)
       .fitSize([width*0.8, height*0.8], topojson.feature(world, world.objects.land))
       .translate([width / 2, height / 2])
       .precision(.1);
 
-  var map_path = d3.geoPath()
+  map_path = d3.geoPath()
     .projection(projection)
     .context(map_context);
 
@@ -475,10 +491,6 @@ function redraw() {
 
 function plotglobe(world, graticule, context, path, detailed) {
   context.clearRect(0,0,width,height);
-
-  // var path = d3.geoPath()
-  //     .projection(projection)
-  //     .context(context);
 
   if (!detailed || (detailed && !image.complete)) {
     context.fillStyle = "rgb(9,26,43)";
@@ -523,6 +535,10 @@ function plotglobe(world, graticule, context, path, detailed) {
   path(graticule.outline());
   context.lineWidth = 1;
   context.stroke();
+}
+
+function plot_globe_with_defaults() {
+  plotglobe(world_info[0], graticule, map_context, map_path, true);
 }
 
 // Adapted from http://techslides.com/d3-globe-with-canvas-webgl-and-three-js
@@ -584,14 +600,12 @@ function on_image_load() {
 
 function load_terminals(data) {
   terminals = [];
-  //pops.clear();
   for (pop of pops.values()) {
     pop.gw = [];
   }
 
   data.forEach(function(line) {
     var name = 'T_'+terminals.length;
-    //console.log(line);
     if (line.lat==undefined || line.lng==undefined) return;
     if (!line.name) return;
     if (line.lat.charAt(0)=='#') return;
@@ -614,9 +628,8 @@ function load_terminals(data) {
     } else {
       t.pop = pops.get(line.pop);
       pops.get(line.pop).gw.push(t);
-      console.log("GW "+t.name+" connected to "+t.pop.name+" POP");
+      //console.log("GW "+t.name+" connected to "+t.pop.name+" POP");
     }
-    //console.log(t.name);
   });
 
   control.reload_terminals(terminals);
@@ -626,7 +639,6 @@ function load_pops(data) {
   pops.clear();
 
   data.forEach(function(line) {
-    //var name = 'T_'+terminals.length;
     if (line.lat==undefined || line.lng==undefined) return;
     if (!line.name) return;
     var p = new POP(line.name);
@@ -636,10 +648,7 @@ function load_pops(data) {
         height: 0
       }
     pops.set(line.name, p);
-    //console.log(t.name);
   });
-
-  //control.reload_terminals(terminals);
 }
 
 // TODO
@@ -709,7 +718,7 @@ function run() {
 }
 
 function run_iteration() {
-    var time = new Date(current_time+=control.speed);
+  var time = new Date(current_time+=control.speed);
 
   sat_context.clearRect(0,0,width,height);
   sat_context.drawImage(sat_canvas.node(),0,0);
@@ -717,26 +726,26 @@ function run_iteration() {
   title.text(timeFormat(time));
 
   if (control.run) {
-  var gmst = satellite.gstimeFromDate(
+    var gmst = satellite.gstimeFromDate(
       time.getUTCFullYear(),
       time.getUTCMonth() + 1, // Note, this function requires months in range 1-12.
       time.getUTCDate(),
       time.getUTCHours(),
       time.getUTCMinutes(),
       time.getUTCSeconds()
-  );
+    );
 
-  satellites.forEach(function(d) {
-    update_sat(d, time, gmst);
-  });
+    satellites.forEach(function(d) {
+      update_sat(d, time, gmst);
+    });
 
-  terminals.forEach(function(d) {
-    update_terminal(d, gmst);
-  });
+    terminals.forEach(function(d) {
+      update_terminal(d, gmst);
+    });
 
-  satellites.forEach(function(d) {
-    update_sat2sat(d);
-  });
+    satellites.forEach(function(d) {
+      update_sat2sat(d);
+    });
 
     if (control.conntrack != undefined) {
       control.conntrack.update(time);
@@ -1514,10 +1523,9 @@ function redraw_graph(time, data_map) {
       [ 'satellites in constellation', (t) => satellites.length ],
       [ 'elapsed time', (t) => msec2time(time-t.stats.start_time) ],
       [ 'ground latency', (t) => format_ms(t.ground_latency) ],
-      [ 'latency (min/avg/max)', 
+      [ 'latency (min/max)', 
         (t) => 
           format_ms(t.stats.min_latency) + " / " +
-          "-" + " / " +
           format_ms(t.stats.max_latency) ],
       [ '# satellites (min/med/max)',
         (t) => 
