@@ -238,6 +238,7 @@ class Controls {
     this['low-altitude'] = true;
     this['high-altitude'] = true;
     this.cables = true;
+    this.ixps = true;
 
     this.background = 12; // winter
     this.projection = 'MtFlatPolarQuartic';
@@ -298,6 +299,7 @@ class Controls {
     f2a.add(this, 'sat-to-sat');
     f2a.add(this, 'shade');
     f2a.add(this, 'cables').onChange(() => plot_globe_with_defaults());
+    f2a.add(this, 'ixps').onChange(() => plot_globe_with_defaults());
     f2a.close();
     var f2b = f2.addFolder('Map');
     f2b.add(this, 'background', [...range(1, 12)]).onChange(function () {
@@ -438,8 +440,8 @@ var world_info = undefined;
 
 var image = undefined;
 
-function load_world(world_detailed, world, cables, cable_ls) {
-  world_info = [world_detailed, world, cables, cable_ls];
+function load_world(world_detailed, world, cables, cable_ls, ixps) {
+  world_info = [world_detailed, world, cables, cable_ls, ixps];
   redraw();
 }
 
@@ -572,6 +574,14 @@ function plotglobe(world, graticule, context, path, detailed) {
     context.strokeStyle = "rgba(0,100,100,0.5)";
     context.beginPath();
     path(world_info[3]);
+    context.lineWidth = 2;
+    context.stroke();
+  }
+
+  if (control.ixps) {
+    context.strokeStyle = "rgba(100,0,100,0.5)";
+    context.beginPath();
+    path(world_info[4]);
     context.lineWidth = 2;
     context.stroke();
   }
@@ -1681,14 +1691,15 @@ d3.queue()
   .defer(d3.text, no_cache("satellites.txt"))
   .defer(d3.json, "https://raw.githubusercontent.com/telegeography/www.submarinecablemap.com/master/public/api/v2/cable/cable-geo.json")
   .defer(d3.json, "https://raw.githubusercontent.com/telegeography/www.submarinecablemap.com/master/public/api/v2/landing-point/landing-point-geo.json")
-  .await(function(error, world_detailed, world, pops, gateways, terminals, satellites, cables, cable_ls) {
+  .defer(d3.json, "https://raw.githubusercontent.com/telegeography/www.internetexchangemap.com/master/public/api/v2/buildings.geojson")
+  .await(function(error, world_detailed, world, pops, gateways, terminals, satellites, cables, cable_ls, ixps) {
     if (error) throw error;
     image = new Image();
     image.crossOrigin = "Anonymous";
     // forked from LeszekSwirski
     image.src = 'https://raw.githubusercontent.com/aneeshd/earth-wallpaper/master/images/world.topo.bathy.200412.3x5400x2700.jpg';
     image.hidden = true;
-    load_world(world_detailed, world, cables, cable_ls);
+    load_world(world_detailed, world, cables, cable_ls, ixps);
     control.create_controls();
     load_pops(pops);
     load_terminals(gateways.concat(terminals));
