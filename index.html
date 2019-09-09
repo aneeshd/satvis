@@ -236,7 +236,7 @@ class Controls {
                         load_satellites(satellites);
                       }));
 
-    f1.add(this, 'pops', ['pops', 'gx-mmp']).onChange(
+    f1.add(this, 'pops', ['pops', 'gx-mmp', 'o3b-pops']).onChange(
       () => d3.queue().defer(d3.tsv, no_cache(this.pops + ".txt"))
                       .await(function(error, pops) {
                         if (error) throw error;
@@ -244,7 +244,7 @@ class Controls {
                       }));
 
     // reload both "gateways" and "user terminals" because we don't currently distinguish between the two
-    f1.add(this, 'gateways', ['gateways', 'gx-sas']).onChange(
+    f1.add(this, 'gateways', ['gateways', 'gx-sas', 'o3b-gateways']).onChange(
       () => d3.queue().defer(d3.tsv, no_cache(this.gateways + ".txt"))
                       .defer(d3.tsv, no_cache(this.users + ".txt"))
                       .await(function(error, gateways, users) {
@@ -454,7 +454,7 @@ function redraw() {
   }
 
   projection = 
-    //d3.geoOrthographic() 3d-view: clipping does not work properly yet
+    //d3.geoOrthographic() //3d-view: clipping does not work properly yet
     //d3.geoEquirectangular()
     //d3.geoMercator()
     d3.geoProjection(d3.geoMtFlatPolarQuarticRaw)
@@ -614,6 +614,26 @@ function on_image_load() {
   map_context.putImageData(target, 0, 0);
 }
 
+function parse_lat_lng(x) {
+  if (x.indexOf('°') != -1) {
+    // DMS format
+    // adapted from https://stackoverflow.com/questions/1140189/converting-latitude-and-longitude-to-decimal-values
+    var parts = x.split(/[^\d\w\.]+/);
+    var dd = Number(parts[0]) + Number(parts[1])/60 + Number(parts[2])/(60*60);
+
+    // Don't do anything for N or E
+    var direction = parts[3];
+    if (direction == "S" || direction == "W") {
+        dd = dd * -1;
+    }
+    dd = dd * RADIANS;
+    return dd;
+  } else {
+    // decimal format
+    return +x * RADIANS;
+  }
+}
+
 function load_terminals(data) {
   terminals = [];
   for (pop of pops.values()) {
@@ -630,8 +650,8 @@ function load_terminals(data) {
       name: line.name || name,
       minel: (+line.minel) || 20,
       posGd: {
-        latitude: +line.lat * RADIANS,
-        longitude: +line.lng * RADIANS,
+        latitude: parse_lat_lng(line.lat),
+        longitude: parse_lat_lng(line.lng),
         height: 0
       },
       pop: undefined,

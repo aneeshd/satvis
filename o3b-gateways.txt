@@ -1,0 +1,10 @@
+lat	lng	name	minel	pop
+34°13'4"N	99°23'47"W	Vernon	0	Dallas
+21.6730556	-158.0480556	Sunset Beach	0	Los Angeles
+-12.276940	-76.866386	Lurin	0	Miami
+-22.883141	-47.210918	Hortolândia	0	São Paulo
+38.802914	-9.381650	Sintra	0	London
+37.820770	22.662741	Nemea	0	Athens
+24.860735	67.001137	Karachi	0	London
+-31.950527	115.860458	Perth	0	Perth
+-32.231503	148.632965	Dubbo	0	Sydney
