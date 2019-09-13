@@ -27,10 +27,6 @@ div.overlay2 {
   opacity: 0.9;
 }
 
-/* svg.overlay {
-  background: black;
-} */
-
 .infopanel {
   font-size: 9px;
   font-family: calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif;
@@ -302,8 +298,12 @@ class Controls {
     f2a.add(this, 'ixps').onChange(() => plot_globe_with_defaults());
     f2a.close();
     var f2b = f2.addFolder('Map');
-    f2b.add(this, 'background', [...range(1, 12)]).onChange(function () {
-      image.src = 'https://raw.githubusercontent.com/aneeshd/earth-wallpaper/master/images/world.topo.bathy.2004' + String(control.background).padStart(2, '0') + '.3x5400x2700.jpg';
+    f2b.add(this, 'background', ['none'].concat([...range(1, 12)])).onChange(function () {
+      if (control.background=='none') {
+        image = new_image();
+      } else {
+        image.src = 'https://raw.githubusercontent.com/aneeshd/earth-wallpaper/master/images/world.topo.bathy.2004' + String(control.background).padStart(2, '0') + '.3x5400x2700.jpg';
+      }
       plot_globe_with_defaults();
     });
     f2b.add(this, 'projection', PROJECTIONS).onChange(redraw);
@@ -471,7 +471,7 @@ function redraw() {
     }
     qid = setTimeout(function() {
       plotglobe(world_detailed, graticule, map_context, map_path, true);
-      d3.select("div.gw").style("display", "block");
+      d3.select("div.gw").style("display","block");
       run_iteration();
       callback(null);
       qid = undefined;
@@ -504,7 +504,7 @@ function redraw() {
     .projection(projection)
     .onMove(function() {
       // draw low resolution map while dragging, and then a detailed one when done
-      d3.select("div.gw").style("display", "none");
+      d3.select("div.gw").style("display","none");
       plotglobe(world, graticule, map_context, map_path, false);
       sat_context.clearRect(0,0,width,height);
       q.defer(delayed_draw);
@@ -517,19 +517,25 @@ function redraw() {
   run_iteration();
 }
 
+function plotland(world, context, path) {
+  context.fillStyle = "rgb(9,26,43)";
+  context.beginPath();
+  path({type: 'Sphere'});
+  context.fill();
+
+  context.fillStyle = "rgb(248,244,240)";
+  context.beginPath();
+  path(topojson.feature(world, world.objects.land));
+  context.fill();
+}
+
 function plotglobe(world, graticule, context, path, detailed) {
   context.clearRect(0,0,width,height);
 
-  if (!detailed || (detailed && !image.complete)) {
-    context.fillStyle = "rgb(9,26,43)";
-    context.beginPath();
-    path({type: 'Sphere'});
-    context.fill();
+  var image_complete = image.complete && image.width>0 && image.height>0;
 
-    context.fillStyle = "rgb(248,244,240)";
-    context.beginPath();
-    path(topojson.feature(world, world.objects.land));
-    context.fill();
+  if (!detailed || (detailed && !image_complete)) {
+    plotland(world, context, path);
   } else {
     // context.strokeStyle = "red";
     // context.beginPath();
@@ -539,11 +545,11 @@ function plotglobe(world, graticule, context, path, detailed) {
   }
 
   if (detailed) {
-    if (image.complete) {
+    if (image_complete) {
       on_image_load();
     } else {
-      console.log('image not available, defer');
       image.onload = (() => plotglobe(world, graticule, context, path, detailed));
+      plotland(world, context, path);
     }
   }
 
@@ -578,7 +584,7 @@ function plotglobe(world, graticule, context, path, detailed) {
     context.stroke();
   }
 
-  if (control.ixps) {
+  if (detailed && control.ixps) {
     context.strokeStyle = "rgba(100,0,100,0.5)";
     context.beginPath();
     path(world_info[4]);
@@ -778,7 +784,7 @@ function load_satellites(data) {
   control.load_conntrack();
 }
 
-var current_time = new Date().getTime();
+  var current_time = new Date().getTime();
 
 function run() {
   d3.timer(function(elapsed) {
@@ -1678,6 +1684,13 @@ function get_satellite_shape(ln, lt, sz, height) {
   return route;
 }
 
+function new_image() {
+  var ret = new Image();
+  ret.crossOrigin = "Anonymous";
+  ret.hidden = true;
+  return ret;
+}
+
 d3.select(self.frameElement).style("height", height + "px");
 
 d3.queue()
@@ -1694,11 +1707,9 @@ d3.queue()
   .defer(d3.json, "https://raw.githubusercontent.com/telegeography/www.internetexchangemap.com/master/public/api/v2/buildings.geojson")
   .await(function(error, world_detailed, world, pops, gateways, terminals, satellites, cables, cable_ls, ixps) {
     if (error) throw error;
-    image = new Image();
-    image.crossOrigin = "Anonymous";
+    image = new_image();
     // forked from LeszekSwirski
     image.src = 'https://raw.githubusercontent.com/aneeshd/earth-wallpaper/master/images/world.topo.bathy.200412.3x5400x2700.jpg';
-    image.hidden = true;
     load_world(world_detailed, world, cables, cable_ls, ixps);
     control.create_controls();
     load_pops(pops);
