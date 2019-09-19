@@ -22,6 +22,11 @@ div.overlay {
   opacity: 0.9;
 }
 
+div.overlay2 {
+  position: absolute;
+  opacity: 0.9;
+}
+
 /* svg.overlay {
   background: black;
 } */
@@ -373,7 +378,7 @@ var shade_canvas = d3.select("body").append("canvas")
     .attr("height", height);
 
 var gw_overlay = d3.select("body").append("div")
-    .attr("class", "overlay gw")
+    .attr("class", "overlay2 gw")
     .style("overflow", "hidden")
     .style("width", width+"px")
     .style("height", height+"px");
@@ -441,7 +446,7 @@ function redraw() {
     }
     qid = setTimeout(function() {
       plotglobe(world_detailed, graticule, map_context, map_path, true);
-      d3.select("div.gw").style("display","block");
+      d3.select("div.gw").style("display", "block");
       run_iteration();
       callback(null);
       qid = undefined;
@@ -480,13 +485,13 @@ function redraw() {
     .projection(projection)
     .onMove(function() {
       // draw low resolution map while dragging, and then a detailed one when done
-      d3.select("div.gw").style("display","none");
+      d3.select("div.gw").style("display", "none");
       plotglobe(world, graticule, map_context, map_path, false);
       sat_context.clearRect(0,0,width,height);
       q.defer(delayed_draw);
     })
     .northUp(true)
-    (map_canvas.node());
+    (gw_overlay.node());
 
   plotglobe(world_detailed, graticule, map_context, map_path, true);
 }
@@ -1058,6 +1063,7 @@ function draw_terminals_and_pops(terminals, pops) {
      .style("position", "absolute");
 
     d3.select(container).selectAll("i."+icon)
+      .attr("title", d => d.name)
       .classed("selected-terminal", d => (d==control._from_trm || d==control._to_trm) ? true : false)
       .classed("selected-pop", d => d==(control._from_trm && control._from_trm.pop) ? true : false)
       .style("left", d => projection([d.posGd.longitude * DEGREES, d.posGd.latitude * DEGREES])[0] + "px")
