@@ -13,3 +13,8 @@ Satellite footprints are loosely adapted from [this example](https://bl.ocks.org
 Flights:
 
 - http://www.tnoda.com/blog/2014-04-02/
+
+SES O3b GW and POP based on information from here:
+
+- https://www.ses.com/our-coverage/teleport-map
+- http://ses-gs.com/govsat/wp-content/uploads/sites/2/2017/12/SES_NetworkMap_RGB_171004_Rise_brochure.pdf
