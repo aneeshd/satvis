@@ -99,7 +99,8 @@ polyline.latencyLine2 {
 }
 
 i.fa-satellite-dish {
-  font-size: 16px;
+  font-size: 12px;
+  font-weight: 400;
   color: steelblue;
   transform: translate(-50%, -50%);
 }
@@ -119,11 +120,17 @@ i.fa-satellite {
 i.selected-terminal {
   font-size: 24px;
   color: purple;
+  background-color: rgba(200,200,200,.5);
+  padding: 5px;
+  border-radius: 50%;
 }
 
 i.selected-pop {
   font-size: 24px;
   color: crimson;
+  background-color: rgba(120,120,220,.5);
+  padding: 5px;
+  border-radius: 50%;
 }
 </style>
 <link rel="stylesheet" type="text/css" href="https://kit-pro.fontawesome.com/releases/v5.10.0/css/pro.min.css">
@@ -157,6 +164,15 @@ const CONSTELLATIONS = [
   'oneweb', 
   'oneweb-a', 
   'starlink'
+];
+
+const PROJECTIONS = [
+  'Equirectangular',
+  'Mercator',
+  'MtFlatPolarQuartic',
+  'Winkel3',
+  'MtFlatPolarQuartic',
+  'Kavrayskiy7'
 ];
 
 function calc_mn(sc, vc) { return Math.min(sc, d3.min(vc)); }
@@ -221,8 +237,10 @@ class Controls {
     this.altitude_threshold = 1100;
     this['low-altitude'] = true;
     this['high-altitude'] = true;
-    this.background = 12; // winter
     this.cables = true;
+
+    this.background = 12; // winter
+    this.projection = 'MtFlatPolarQuartic';
 
     this.from_trm = "undefined";
     this.to_trm = "undefined";
@@ -275,16 +293,19 @@ class Controls {
     // f2.add(this, 'low-altitude');//.onChange(enabled => d3.selectAll('.lowaltitude').style('display', enabled ? null : 'none'));
     // f2.add(this, 'high-altitude');//.onChange(enabled => d3.selectAll('.highaltitude').style('display', enabled ? null : 'none'));
     var f2a = f2.addFolder('Layers');
-    f2a.add(this, 'background', [...range(1, 12)]).onChange(function () {
-      image.src = 'https://raw.githubusercontent.com/aneeshd/earth-wallpaper/master/images/world.topo.bathy.2004' + String(control.background).padStart(2, '0') + '.3x5400x2700.jpg';
-      plot_globe_with_defaults();
-    });
     f2a.add(this, 'satellite names');
     f2a.add(this, 'sat-to-ground');
     f2a.add(this, 'sat-to-sat');
     f2a.add(this, 'shade');
     f2a.add(this, 'cables').onChange(() => plot_globe_with_defaults());
     f2a.close();
+    var f2b = f2.addFolder('Map');
+    f2b.add(this, 'background', [...range(1, 12)]).onChange(function () {
+      image.src = 'https://raw.githubusercontent.com/aneeshd/earth-wallpaper/master/images/world.topo.bathy.2004' + String(control.background).padStart(2, '0') + '.3x5400x2700.jpg';
+      plot_globe_with_defaults();
+    });
+    f2b.add(this, 'projection', PROJECTIONS).onChange(redraw);
+    f2b.close();
     f2.open();
     this.f2 = f2;
     // gui.remember(this);
@@ -422,6 +443,8 @@ function load_world(world_detailed, world, cables, cable_ls) {
   redraw();
 }
 
+var zoom = undefined;
+
 function redraw() {
 
   if (world_info==undefined) return;
@@ -458,13 +481,14 @@ function redraw() {
     };
   }
 
-  projection = 
-    //d3.geoOrthographic() 3d-view: clipping does not work properly yet
-    //d3.geoEquirectangular()
-    //d3.geoMercator()
-    d3.geoProjection(d3.geoMtFlatPolarQuarticRaw)
-    //d3.geoMtFlatPolarQuartic()
-    //d3.geoProjection(d3.geoKavrayskiy7Raw)
+  projection = eval('d3.geo'+control.projection)()
+    // //d3.geoOrthographic() 3d-view: clipping does not work properly yet
+    // //d3.geoEquirectangular()
+    // //d3.geoMercator()
+    // //d3.geoProjection(d3.geoMtFlatPolarQuarticRaw)
+    // d3.geoWinkel3()
+    // //d3.geoMtFlatPolarQuartic()
+    // //d3.geoProjection(d3.geoKavrayskiy7Raw)
       .fitSize([width*0.8, height*0.8], topojson.feature(world, world.objects.land))
       .translate([width / 2, height / 2])
       .precision(.1);
@@ -481,7 +505,7 @@ function redraw() {
     .projection(projection)
     .context(sat_context);
 
-  d3.geoZoom()
+  zoom = d3.geoZoom()
     .projection(projection)
     .onMove(function() {
       // draw low resolution map while dragging, and then a detailed one when done
@@ -494,6 +518,8 @@ function redraw() {
     (gw_overlay.node());
 
   plotglobe(world_detailed, graticule, map_context, map_path, true);
+
+  run_iteration();
 }
 
 function plotglobe(world, graticule, context, path, detailed) {
@@ -543,7 +569,7 @@ function plotglobe(world, graticule, context, path, detailed) {
   context.lineWidth = 1;
   context.stroke();
 
-  if (control.cables) {
+  if (detailed && control.cables) {
     context.strokeStyle = "rgba(200,200,200,0.5)";
     context.beginPath();
     path(world_info[2]);
@@ -729,7 +755,7 @@ function load_satellites(data) {
   control.load_conntrack();
 }
 
-  var current_time = new Date().getTime();
+var current_time = new Date().getTime();
 
 function run() {
   d3.timer(function(elapsed) {
