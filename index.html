@@ -144,6 +144,12 @@ i.selected-pop {
 <script src="solar-positions.js"></script>
 <script>
 
+// geoZoom does not work on Safari if targeting the gw_overlay layer
+// https://stackoverflow.com/a/9851769
+var isSafari = /constructor/i.test(window.HTMLElement) || (function (p) { return p.toString() === "[object SafariRemoteNotification]"; })(!window['safari'] || (typeof safari !== 'undefined' && safari.pushNotification));
+// actually it does not work properly on Chrome either
+isSafari = true;
+
 const font_family = 'calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif';
 
 const CONSTELLATIONS = [
@@ -401,7 +407,7 @@ var shade_canvas = d3.select("body").append("canvas")
     .attr("height", height);
 
 var gw_overlay = d3.select("body").append("div")
-    .attr("class", "overlay2 gw")
+    .attr("class", isSafari ? "overlay gw" : "overlay2 gw")
     .style("overflow", "hidden")
     .style("width", width+"px")
     .style("height", height+"px");
@@ -510,7 +516,7 @@ function redraw() {
       q.defer(delayed_draw);
     })
     .northUp(true)
-    (gw_overlay.node());
+    ((isSafari ? map_canvas : gw_overlay).node());
 
   plotglobe(world_detailed, graticule, map_context, map_path, true);
 
