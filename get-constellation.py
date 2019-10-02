@@ -16,17 +16,22 @@ constellations = {
 import urllib.request
 import sys
 
-def main(ids):
+def main(cname, ids):
+    result = ''
     for id in ids:
         with urllib.request.urlopen("https://celestrak.com/satcat/tle.php?CATNR=%s"%id) as f:
             contents = f.read().decode('utf-8')
 
         b = contents.find('<pre>')
         e = contents.find('</pre')
-        contents = contents[b+6:e].strip()
+        contents = contents[b+6:e]
+        contents = '\n'.join([x.strip() for x in contents.strip().split('\n')])
+        print(repr(contents))
+        result += contents+'\n'
 
-        print(contents)
+    with open(cname+'.txt', 'w', encoding='utf-8') as f:
+        print(result, end='', file=f)
 
 if __name__=='__main__':
     cname = sys.argv[1]
-    main(constellations[cname])
+    main(cname, constellations[cname])
