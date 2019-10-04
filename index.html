@@ -1174,14 +1174,14 @@ function draw_terminal(trm, selected_sats) {
         ]};
         if (el<(min_el+10) || el>(180-min_el-10)) {
           // warn when elevation angle is close to the allowed minimum
-          c.strokeStyle = "rgba(255,0,0,0.5)";
+          c.strokeStyle = "rgba(199, 54, 97, 0.5)";
         } else {
-          c.strokeStyle = "rgba(140,140,140,0.5)";
+          c.strokeStyle = "rgba(54, 199, 170, 0.5)";
         }
         if (selected_sats.includes(sat) && (trm==control._from_trm || trm==control._to_trm)) {
           c.lineWidth = 6;
         } else {
-          c.lineWidth = 1;
+          c.lineWidth = 2;
         }
         c.beginPath();
         sat_path(route);
