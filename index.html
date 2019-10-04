@@ -12,9 +12,12 @@ svg {
   position: absolute;
   font-size: 9px;
   font-family: calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif;
-  background-color: #374148;
-  opacity: 0.9;
   padding: 3px;
+}
+
+svg.overlay {
+  opacity: 0.9;
+  background-color: #374148;
 }
 
 div.overlay {
@@ -94,36 +97,39 @@ polyline.latencyLine2 {
   opacity: 0.5;
 }
 
-i.fa-satellite-dish {
+text.satellite-dish {
   font-size: 12px;
   font-weight: 400;
-  color: steelblue;
-  transform: translate(-50%, -50%);
+  fill: steelblue;
+  text-anchor: middle;
+  alignment-baseline: middle;
 }
 
-i.fa-circle {
-  font-size: 16px;
-  color: navy;
-  transform: translate(-50%, -50%);
+text.pop {
+  font-size: 12px;
+  fill: navy;
+  text-anchor: middle;
+  alignment-baseline: middle;
 }
 
-i.fa-satellite {
+text.satellite {
   font-size: 18px;
-  color: mediumvioletred;
-  transform: translate(-50%, -50%);
+  fill: mediumvioletred;
+  text-anchor: middle;
+  alignment-baseline: middle;
 }
 
-i.selected-terminal {
+text.selected-terminal {
   font-size: 24px;
-  color: purple;
+  fill: purple;
   background-color: rgba(200,200,200,.5);
   padding: 5px;
   border-radius: 50%;
 }
 
-i.selected-pop {
+text.selected-pop {
   font-size: 24px;
-  color: crimson;
+  fill: crimson;
   background-color: rgba(120,120,220,.5);
   padding: 5px;
   border-radius: 50%;
@@ -137,6 +143,7 @@ i.selected-pop {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-format/1.3.0/d3-format.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-queue/3.0.7/d3-queue.min.js"></script>
+<script src="https://d3js.org/d3-selection-multi.v1.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.6/dat.gui.min.js"></script>
 <script src="https://unpkg.com/d3-geo-zoom@1.3.1"></script>
 <script src="https://unpkg.com/simple-statistics@7.0.2/dist/simple-statistics.min.js"></script>
@@ -279,7 +286,7 @@ class Controls {
                         load_terminals(gateways.concat(users));
                       }));
 
-    f1.add(this, 'users', ['terminals']).onChange(
+    f1.add(this, 'users', ['terminals', 'terminals_1']).onChange(
       () => d3.queue().defer(d3.tsv, no_cache(this.gateways + ".txt"))
                       .defer(d3.tsv, no_cache(this.users + ".txt"))
                       .await(function(error, gateways, users) {
@@ -407,8 +414,8 @@ var shade_canvas = d3.select("body").append("canvas")
     .attr("width", width)
     .attr("height", height);
 
-var gw_overlay = d3.select("body").append("div")
-    .attr("class", isSafari ? "overlay gw" : "overlay2 gw")
+var gw_overlay = d3.select("body").append("svg")
+    .attr("class", isSafari ? "gw" : "gw")
     .style("overflow", "hidden")
     .style("width", width+"px")
     .style("height", height+"px");
@@ -467,7 +474,7 @@ function redraw() {
   d3.selectAll("canvas")
     .attr("height", height)
     .attr("width", width);
-  d3.selectAll("div.gw")
+  d3.selectAll("svg.gw")
     .style("width", width+"px")
     .style("height", height+"px");
 
@@ -478,7 +485,7 @@ function redraw() {
     }
     qid = setTimeout(function() {
       plotglobe(world_detailed, graticule, map_context, map_path, true);
-      d3.select("div.gw").style("display","block");
+      d3.select("svg.gw").style("display","block");
       run_iteration();
       callback(null);
       qid = undefined;
@@ -511,13 +518,13 @@ function redraw() {
     .projection(projection)
     .onMove(function() {
       // draw low resolution map while dragging, and then a detailed one when done
-      d3.select("div.gw").style("display","none");
+      d3.select("svg.gw").style("display", "none");
       plotglobe(world, graticule, map_context, map_path, false);
       sat_context.clearRect(0,0,width,height);
       q.defer(delayed_draw);
     })
     .northUp(true)
-    ((isSafari ? map_canvas : gw_overlay).node());
+    ((gw_overlay).node());
 
   plotglobe(world_detailed, graticule, map_context, map_path, true);
 
@@ -724,6 +731,7 @@ function load_pops(data) {
   data.forEach(function(line) {
     if (line.lat==undefined || line.lng==undefined) return;
     if (!line.name) return;
+    if (line.lat.charAt(0)=='#') return;
     var p = new POP(line.name);
     p.posGd = {
         latitude: +line.lat * RADIANS,
@@ -1114,28 +1122,33 @@ function draw_sat(sat, selected_sats) {
 };
 
 function draw_terminals_and_pops(terminals, pops) {
-  var drawfn = function(data, container, icon, icon2) {
+  var drawfn = function(data, container, icon, icon2, val) {
     var p = d3.select(container)
-              .selectAll("i."+icon)
+              .selectAll("text."+icon)
               .data(data);
 
     p.enter()
-     .append("i")
-     .attr("class", icon2+" "+icon)
-     .style("position", "absolute");
+     .append("text")
+     .attr("class", icon2+" "+icon);
 
-    d3.select(container).selectAll("i."+icon)
+    d3.select(container).selectAll("text."+icon)
       .attr("title", d => d.name)
       .classed("selected-terminal", d => (d==control._from_trm || d==control._to_trm) ? true : false)
       .classed("selected-pop", d => d==(control._from_trm && control._from_trm.pop) ? true : false)
-      .style("left", d => projection([d.posGd.longitude * DEGREES, d.posGd.latitude * DEGREES])[0] + "px")
-      .style("top", d => projection([d.posGd.longitude * DEGREES, d.posGd.latitude * DEGREES])[1] + "px");
+      .attrs(function (d) {
+        var pos = projection([d.posGd.longitude * DEGREES, d.posGd.latitude * DEGREES]);
+        return {
+          x: pos[0],
+          y: pos[1],
+        }
+      })
+      .text(function (d) { return val });
   };
 
-  drawfn(terminals, "div.gw", "fa-satellite-dish", "fas");
-  drawfn([...pops.values()], "div.gw", "fa-circle", "far");
+  drawfn(terminals, "svg.gw", "satellite-dish", "fas", '\uf7c0');
+  drawfn([...pops.values()], "svg.gw", "pop", "far", '\uf111');
 
-  // slow: drawfn(satellites, "div.gw", "fa-satellite", "fas");
+  // slow: drawfn(satellites, "svg.gw", "fa-satellite", "fas");
 }
 
 function draw_terminal(trm, selected_sats) {
