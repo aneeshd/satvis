@@ -261,13 +261,22 @@ class Controls {
     this.cables = true;
     this.ixps = true;
 
-    this.background = 12; // winter
+    this.background = (new Date()).getMonth()+1;
     this.projection = 'MtFlatPolarQuartic';
 
     this.from_trm = "undefined";
     this.to_trm = "undefined";
     this._from_trm = undefined;
     this._to_trm = undefined;
+  }
+
+  get_background_url() {
+    if (this.background=='none') {
+      return undefined;
+    } else if (this.background=='auto') {
+      this.background = current_time.getMonth()+1;
+    }
+    return 'https://raw.githubusercontent.com/aneeshd/earth-wallpaper/master/images/world.topo.bathy.2004' + String(this.background).padStart(2, '0') + '.3x5400x2700.jpg';
   }
 
   create_controls() {
@@ -323,11 +332,12 @@ class Controls {
     f2a.add(this, 'ixps').onChange(() => plot_globe_with_defaults());
     f2a.close();
     var f2b = f2.addFolder('Map');
-    f2b.add(this, 'background', ['none'].concat([...range(1, 12)])).onChange(function () {
-      if (control.background=='none') {
+    f2b.add(this, 'background', ['none', 'auto'].concat([...range(1, 12)])).onChange(function () {
+      var url = control.get_background_url();
+      if (url === undefined) {
         image = new_image();
       } else {
-        image.src = 'https://raw.githubusercontent.com/aneeshd/earth-wallpaper/master/images/world.topo.bathy.2004' + String(control.background).padStart(2, '0') + '.3x5400x2700.jpg';
+        image.src = url;
       }
       plot_globe_with_defaults();
     });
@@ -412,31 +422,36 @@ var title = d3.select("body").append("div")
 var graticule = d3.geoGraticule();
 
 var map_canvas = d3.select("body").append("canvas")
-    .attr("width", width)
-    .attr("height", height);
+  .attr("id", "map_canvas")
+  .attr("width", width)
+  .attr("height", height);
 
 var sat_canvas = d3.select("body").append("canvas")
-    .attr("class", "overlay")
-    .attr("width", width)
-    .attr("height", height);
+  .attr("id", "sat_canvas")
+  .attr("class", "overlay")
+  .attr("width", width)
+  .attr("height", height);
 
 var shade_canvas = d3.select("body").append("canvas")
-    .attr("class", "overlay")
-    .attr("width", width)
-    .attr("height", height);
+  .attr("id", "shade_canvas")
+  .attr("class", "overlay")
+  .attr("width", width)
+  .attr("height", height);
 
 var gw_overlay = d3.select("body").append("svg")
-    .attr("class", "gw")
-    .style("overflow", "hidden")
-    .style("width", width+"px")
-    .style("height", height+"px");
+  .attr("class", "gw")
+  .style("overflow", "hidden")
+  .style("width", width+"px")
+  .style("height", height+"px");
 
 var hidden_canvas = d3.select("body").append("canvas")
+  .attr("id", "hidden_canvas")
   .style("display", "none")
   .attr("width", width)
   .attr("height", height);
 
 var hidden_canvas2 = d3.select("body").append("canvas")
+  .attr("id", "hidden_canvas2")
   .style("display", "none")
   .attr("width", width)
   .attr("height", height);
@@ -529,7 +544,7 @@ function redraw() {
     .projection(projection)
     .onMove(function() {
       // draw low resolution map while dragging, and then a detailed one when done
-      d3.select("svg.gw").style("display", "none");
+      // d3.select("svg.gw").style("display", "none");
       plotglobe(world, graticule, map_context, map_path, false);
       sat_context.clearRect(0,0,width,height);
       q.defer(delayed_draw);
@@ -623,18 +638,18 @@ function plotglobe(world, graticule, context, path, detailed) {
       })
       .html(d => val + '<title>' + titlefn(d) + '</title>');
   };
-  if (detailed) {
-    if (control.cables) {
-      drawfn(world_info[3].features, "svg.gw", "cable-ls", "far", '\uf111', d => d.properties.name + ' / ' + d.properties.slug);
-    } else {
-      d3.select("svg.gw").selectAll("text.cable-ls").remove();
-    }
-    if (control.ixps) {
-      drawfn(world_info[4].features, "svg.gw", "ixp", "far", '\uf111', d => d.properties.metro_area + ' / ' + d.properties.slug);
-    } else {
-      d3.select("svg.gw").selectAll("text.ixp").remove();
-    }
+
+  if (detailed && control.cables) {
+    drawfn(world_info[3].features, "svg.gw", "cable-ls", "far", '\uf111', d => d.properties.name + ' / ' + d.properties.slug);
+  } else {
+    d3.select("svg.gw").selectAll("text.cable-ls").remove();
   }
+  if (detailed && control.ixps) {
+    drawfn(world_info[4].features, "svg.gw", "ixp", "far", '\uf111', d => d.properties.metro_area + ' / ' + d.properties.slug);
+  } else {
+    d3.select("svg.gw").selectAll("text.ixp").remove();
+  }
+
 }
 
 function plot_globe_with_defaults() {
@@ -829,17 +844,18 @@ function load_satellites(data) {
   control.load_conntrack();
 }
 
-  var current_time = new Date().getTime();
+var current_time = new Date().getTime();
 
 function run() {
   d3.timer(function(elapsed) {
     if (!control.run) return;
+    current_time+=control.speed;
     run_iteration();
   });
 }
 
 function run_iteration() {
-  var time = new Date(current_time+=control.speed);
+  var time = new Date(current_time);
 
   sat_context.clearRect(0,0,width,height);
   sat_context.drawImage(sat_canvas.node(),0,0);
@@ -1152,7 +1168,7 @@ function draw_sat(sat, selected_sats) {
 };
 
 function draw_terminals_and_pops(terminals, pops) {
-  var drawfn = function(data, container, icon, icon2, val) {
+  var drawfn = function(data, container, icon, icon2, val, titlefn) {
     var p = d3.select(container)
               .selectAll("text."+icon)
               .data(data);
@@ -1162,7 +1178,7 @@ function draw_terminals_and_pops(terminals, pops) {
      .attr("class", icon2+" "+icon);
 
     d3.select(container).selectAll("text."+icon)
-      .attr("title", d => d.name)
+      .attr("title", titlefn)
       .classed("selected-terminal", d => (d==control._from_trm || d==control._to_trm) ? true : false)
       .classed("selected-pop", d => d==(control._from_trm && control._from_trm.pop) ? true : false)
       .attrs(function (d) {
@@ -1172,11 +1188,11 @@ function draw_terminals_and_pops(terminals, pops) {
           y: pos[1],
         }
       })
-      .html(d => val + '<title>' + d.name + '</title>');
+      .html(d => val + '<title>' + titlefn(d) + '</title>');
   };
 
-  drawfn(terminals, "svg.gw", "satellite-dish", "fas", '\uf7c0');
-  drawfn([...pops.values()], "svg.gw", "pop", "far", '\uf111');
+  drawfn(terminals, "svg.gw", "satellite-dish", "fas", '\uf7c0', d => d.name);
+  drawfn([...pops.values()], "svg.gw", "pop", "far", '\uf111', d => 'POP: ' + d.name);
 
   // slow: drawfn(satellites, "svg.gw", "fa-satellite", "fas");
 }
@@ -1759,7 +1775,7 @@ d3.queue()
     if (error) throw error;
     image = new_image();
     // forked from LeszekSwirski
-    image.src = 'https://raw.githubusercontent.com/aneeshd/earth-wallpaper/master/images/world.topo.bathy.200412.3x5400x2700.jpg';
+    image.src = control.get_background_url();
     load_world(world_detailed, world, cables, cable_ls, ixps);
     control.create_controls();
     load_pops(pops);
