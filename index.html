@@ -166,6 +166,7 @@ text.selected-pop {
 <script src="https://unpkg.com/simple-statistics@7.0.2/dist/simple-statistics.min.js"></script>
 <script src="satellite.js"></script>
 <script src="solar-positions.js"></script>
+<script src="viz2d.js"></script>
 <script>
 
 const font_family = 'calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif';
@@ -237,6 +238,10 @@ function format_ms(x) {
   return d3.formatPrefix(".1s", 1e-3)(x)+"s" // display as ms
 }
 
+function distance3d(p1, p2) {
+  return Math.sqrt( (p1.x-p2.x)**2 + (p1.y-p2.y)**2 + (p1.z-p2.z)**2 );
+}
+
 // Controls
 const gui = new dat.GUI();
 
@@ -268,6 +273,8 @@ class Controls {
     this.to_trm = "undefined";
     this._from_trm = undefined;
     this._to_trm = undefined;
+
+    this.visualization = new Viz2d();
   }
 
   get_background_url() {
@@ -341,7 +348,7 @@ class Controls {
       }
       plot_globe_with_defaults();
     });
-    f2b.add(this, 'projection', PROJECTIONS).onChange(redraw);
+    f2b.add(this, 'projection', PROJECTIONS).onChange(control.visualization.redraw);
     f2b.close();
     f2.open();
     this.f2 = f2;
@@ -419,50 +426,6 @@ d3.select("div.dg.ac")
 var title = d3.select("body").append("div")
   .attr("class", "datetime");
 
-var graticule = d3.geoGraticule();
-
-var map_canvas = d3.select("body").append("canvas")
-  .attr("id", "map_canvas")
-  .attr("width", width)
-  .attr("height", height);
-
-var sat_canvas = d3.select("body").append("canvas")
-  .attr("id", "sat_canvas")
-  .attr("class", "overlay")
-  .attr("width", width)
-  .attr("height", height);
-
-var shade_canvas = d3.select("body").append("canvas")
-  .attr("id", "shade_canvas")
-  .attr("class", "overlay")
-  .attr("width", width)
-  .attr("height", height);
-
-var gw_overlay = d3.select("body").append("svg")
-  .attr("class", "gw")
-  .style("overflow", "hidden")
-  .style("width", width+"px")
-  .style("height", height+"px");
-
-var hidden_canvas = d3.select("body").append("canvas")
-  .attr("id", "hidden_canvas")
-  .style("display", "none")
-  .attr("width", width)
-  .attr("height", height);
-
-var hidden_canvas2 = d3.select("body").append("canvas")
-  .attr("id", "hidden_canvas2")
-  .style("display", "none")
-  .attr("width", width)
-  .attr("height", height);
-
-var map_context = map_canvas.node().getContext("2d");
-var sat_context = sat_canvas.node().getContext("2d");
-var shade_context = shade_canvas.node().getContext("2d");
-var hidden_context = hidden_canvas.node().getContext("2d");
-var hidden_context2 = hidden_canvas2.node().getContext("2d");
-var sat_path, shade_path, map_path;
-
 var timeFormat = d3.timeFormat("%Y-%m-%d %H:%M:%S");
 
 var satellites = [];
@@ -471,246 +434,21 @@ var pops = new Map();
 
 var graph_settings = undefined;
 
-var projection;
 var q = d3.queue();
 
-window.addEventListener("resize", redraw);
+window.addEventListener("resize", control.visualization.redraw);
 
 var world_info = undefined;
 
 var image = undefined;
 
+function plot_globe_with_defaults() {
+  control.visualization.plot_globe_with_defaults();
+}
+
 function load_world(world_detailed, world, cables, cable_ls, ixps) {
   world_info = [world_detailed, world, cables, cable_ls, ixps];
-  redraw();
-}
-
-var zoom = undefined;
-
-function redraw() {
-
-  if (world_info==undefined) return;
-
-  var world_detailed = world_info[0],
-      world = world_info[1];
-
-  width = Math.floor( window.innerWidth );
-  height = Math.floor( window.innerHeight );
-
-  d3.selectAll("canvas")
-    .attr("height", height)
-    .attr("width", width);
-  d3.selectAll("svg.gw")
-    .style("width", width+"px")
-    .style("height", height+"px");
-
-  var qid = undefined;
-  function delayed_draw(callback) {
-    if (qid != undefined) {
-      clearTimeout(qid);
-    }
-    qid = setTimeout(function() {
-      plotglobe(world_detailed, graticule, map_context, map_path, true);
-      d3.select("svg.gw").style("display","block");
-      run_iteration();
-      callback(null);
-      qid = undefined;
-    }, 0);
-    return {
-      abort: function() {
-        clearTimeout(id);
-      }
-    };
-  }
-
-  projection = eval('d3.geo'+control.projection)()
-      .fitSize([width*0.8, height*0.8], topojson.feature(world, world.objects.land))
-      .translate([width / 2, height / 2])
-      .precision(.1);
-
-  map_path = d3.geoPath()
-    .projection(projection)
-    .context(map_context);
-
-  shade_path = d3.geoPath()
-    .projection(projection)
-    .context(shade_context);
-
-  sat_path = d3.geoPath()
-    .projection(projection)
-    .context(sat_context);
-
-  zoom = d3.geoZoom()
-    .projection(projection)
-    .onMove(function() {
-      // draw low resolution map while dragging, and then a detailed one when done
-      // d3.select("svg.gw").style("display", "none");
-      plotglobe(world, graticule, map_context, map_path, false);
-      sat_context.clearRect(0,0,width,height);
-      q.defer(delayed_draw);
-    })
-    .northUp(true)
-    (gw_overlay.node());
-
-  plotglobe(world_detailed, graticule, map_context, map_path, true);
-
-  run_iteration();
-}
-
-function plotland(world, context, path) {
-  context.fillStyle = "rgb(9,26,43)";
-  context.beginPath();
-  path({type: 'Sphere'});
-  context.fill();
-
-  context.fillStyle = "rgb(248,244,240)";
-  context.beginPath();
-  path(topojson.feature(world, world.objects.land));
-  context.fill();
-}
-
-function plotglobe(world, graticule, context, path, detailed) {
-  context.clearRect(0,0,width,height);
-
-  var image_complete = image.complete && image.width>0 && image.height>0;
-
-  if (!detailed || (detailed && !image_complete)) {
-    plotland(world, context, path);
-  } else {
-    // context.strokeStyle = "red";
-    // context.beginPath();
-    // path({type: 'Sphere'});
-    // context.lineWidth = 10;
-    // context.stroke();
-  }
-
-  if (detailed) {
-    if (image_complete) {
-      on_image_load();
-    } else {
-      image.onload = (() => plotglobe(world, graticule, context, path, detailed));
-      plotland(world, context, path);
-    }
-  }
-
-  context.strokeStyle = "rgb(214,210,213)";
-  context.beginPath();
-  path(topojson.feature(world, world.objects.countries));
-  context.lineWidth = 1;
-  context.stroke();
-
-  context.strokeStyle = "#eee";
-  context.beginPath();
-  path(graticule());
-  context.lineWidth = 1;
-  context.stroke();
-
-  context.beginPath();
-  path(graticule.outline());
-  context.lineWidth = 1;
-  context.stroke();
-
-  if (detailed && control.cables) {
-    context.strokeStyle = "rgba(200,200,200,0.5)";
-    context.beginPath();
-    path(world_info[2]);
-    context.lineWidth = 2;
-    context.stroke();
-  }
-
-  var drawfn = function(data, container, icon, icon2, val, titlefn) {
-    var p = d3.select(container)
-              .selectAll("text."+icon)
-              .data(data);
-
-    p.enter()
-     .append("text")
-     .attr("class", icon2+" "+icon);
-
-    d3.select(container).selectAll("text."+icon)
-      .attr("title", titlefn)
-      .attrs(function (d) {
-        var pos = projection([d.geometry.coordinates[0], d.geometry.coordinates[1]]);
-        return {
-          x: pos[0],
-          y: pos[1],
-        }
-      })
-      .html(d => val + '<title>' + titlefn(d) + '</title>');
-  };
-
-  if (detailed && control.cables) {
-    drawfn(world_info[3].features, "svg.gw", "cable-ls", "far", '\uf111', d => d.properties.name + ' / ' + d.properties.slug);
-  } else {
-    d3.select("svg.gw").selectAll("text.cable-ls").remove();
-  }
-  if (detailed && control.ixps) {
-    drawfn(world_info[4].features, "svg.gw", "ixp", "far", '\uf111', d => d.properties.metro_area + ' / ' + d.properties.slug);
-  } else {
-    d3.select("svg.gw").selectAll("text.ixp").remove();
-  }
-
-}
-
-function plot_globe_with_defaults() {
-  plotglobe(world_info[0], graticule, map_context, map_path, true);
-}
-
-// Adapted from http://techslides.com/d3-globe-with-canvas-webgl-and-three-js
-function on_image_load() {
-
-  var dx = image.width,
-      dy = image.height;
-
-  hidden_canvas
-    .attr("width", dx)
-    .attr("height", dy);
-
-  hidden_context.drawImage(image, 0, 0, dx, dy);
-
-  // draw the sphere on a hidden context, and use that as a mask
-  hidden_canvas2
-    .attr("width", width)
-    .attr("height", height);
-
-  var path = d3.geoPath(projection);
-  var sphere = {type:"Sphere"};
-  hidden_context2.clearRect(0,0,width,height);
-  hidden_context2.beginPath();
-  d3.geoPath().projection(projection).context(hidden_context2)(sphere);
-  hidden_context2.fillStyle='red';
-  hidden_context2.fill();
-  var i = hidden_context2.getImageData(0,0,width,height);
-  var srcMask = i.data;
-
-  var sourceData = hidden_context.getImageData(0, 0, dx, dy).data,
-      target = map_context.createImageData(width, height),
-      targetData = target.data;
-
-  //this get it done in terms of laying the right tiles on the right projection!
-  for (var y = 0, i = -1; y < height; ++y) {
-    for (var x = 0; x < width; ++x) {
-      // is point within the sphere? if not, just fill it in with a background colour
-      if (srcMask[i+1] != 255) {
-        targetData[++i] = 25;
-        targetData[++i] = 25;
-        targetData[++i] = 25;
-        targetData[++i] = 255;
-        continue;
-      }
-
-      var p = projection.invert([x, y]), λ = p[0], φ = p[1];
-      if (λ > 180 || λ < -180 || φ > 90 || φ < -90) { i += 4; continue; }
-      var q = ((90 - φ) / 180 * dy | 0) * dx + ((180 + λ) / 360 * dx | 0) << 2;
-      targetData[++i] = sourceData[q];
-      targetData[++i] = sourceData[++q];
-      targetData[++i] = sourceData[++q];
-      targetData[++i] = 255;
-    }
-  }
-
-  map_context.clearRect(0, 0, width, height);
-  map_context.putImageData(target, 0, 0);
+  control.visualization.redraw();
 }
 
 function parse_lat_lng(x) {
@@ -857,9 +595,6 @@ function run() {
 function run_iteration() {
   var time = new Date(current_time);
 
-  sat_context.clearRect(0,0,width,height);
-  sat_context.drawImage(sat_canvas.node(),0,0);
-
   title.text(timeFormat(time));
 
   if (control.run) {
@@ -896,22 +631,7 @@ function run_iteration() {
     redraw_graph(time, control.conntrack.conns);
   }
 
-  plotshade(time, shade_context, shade_path);
-
-  satellites.forEach(function(d) {
-    draw_sat(d, selected_sats);
-  });
-
-  draw_terminals_and_pops(terminals, pops);
-
-  terminals.forEach(function(d) {
-    draw_terminal(d, selected_sats);
-  });
-
-  for (d of pops.entries()) {
-    if (d[0]==undefined || d[1]==undefined) continue;
-    draw_pop(d[0], d[1]);
-  }
+  control.visualization.update(time, selected_sats);
 };
 
 class ConnTrack {
@@ -1081,228 +801,6 @@ function update_sat2sat(sat) {
   .sort((a,b) => a[1]-b[1])
   ;
 }
-
-function draw_sat(sat, selected_sats) {
-  var pos = sat.posGd;
-
-  try {
-    pos.longitude
-  }
-  catch (e) {
-    return
-  }
-
-  if (control.zen && !selected_sats.includes(sat)) return;
-
-  var scale = 1.0;
-  try {
-    scale = 175.0 / projection.scale();
-  } catch (e) {
-  }
-
-  var name = sat.name;
-  var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=Math.max(0.7*scale, 0.02);
-  var detail = false;
-
-  sat_context.fillStyle = pos.height > control.altitude_threshold ? "#bda0bc" : "#03cea4";
-  sat_context.strokeStyle = pos.height > control.altitude_threshold ? "#bda0bc" : "#03cea4";
-  if (selected_sats.indexOf(sat)!=-1) {
-    sat_context.fillStyle = "#824670";
-    sat_context.strokeStyle = "#824670";
-    detail = true;
-    sz = Math.max(0.7*scale*3, 0.02*3);
-  }
-
-  var route = get_satellite_shape(ln, lt, sz, pos.height);
-  sat_context.lineWidth = 0.25;
-  sat_context.beginPath();
-  sat_path(route);
-  sat_context.fill();
-
-  if (control['satellite names'] || detail) {
-    // FIXME does not respect geo projection if hidden
-    var xy = projection([ln, lt]);
-    sat_context.font = "9px sans-serif";
-    sat_context.textAlign = "center";
-    sat_context.fillText(name, xy[0], xy[1]+30);
-  }
-
-  if (control.FOV) {
-    // super slow
-    var night = getFootprint(pos);
-    shade_context.beginPath();
-    shade_path(night);
-    shade_context.fillStyle = "rgba(255,0,255,0.01)";
-    shade_context.fill();
-    shade_context.strokeStyle = "rgba(60,60,60,0.1)"
-    shade_context.stroke();
-  }
-
-  if (control['sat-to-sat']) {
-    for (i=0; i<4; i++) {
-      try {
-        var s = sat.conn[i][0];
-      } catch(e) {
-        //console.log('error', sat.name, i);
-        continue;
-      }
-      try {
-        var route = {type: "LineString", "coordinates": [
-          [s.posGd.longitude * DEGREES, s.posGd.latitude * DEGREES, s.posGd.height],
-          [pos.longitude * DEGREES, pos.latitude * DEGREES, pos.height]
-        ]};
-        sat_context.beginPath();
-        if (pos.height > control.altitude_threshold) {
-          sat_context.strokeStyle = "rgba(0,0,255,0.4)";
-        } else {
-          sat_context.strokeStyle = "rgba(0,255,0,0.4)";
-        }
-        sat_context.lineWidth = 0.25;
-        sat_path(route);
-        sat_context.stroke();
-      } catch(e) {
-        console.log('error', sat.name, s.name, s);
-      }
-    }
-  }
-};
-
-function draw_terminals_and_pops(terminals, pops) {
-  var drawfn = function(data, container, icon, icon2, val, titlefn) {
-    var p = d3.select(container)
-              .selectAll("text."+icon)
-              .data(data);
-
-    p.enter()
-     .append("text")
-     .attr("class", icon2+" "+icon);
-
-    d3.select(container).selectAll("text."+icon)
-      .attr("title", titlefn)
-      .classed("selected-terminal", d => (d==control._from_trm || d==control._to_trm) ? true : false)
-      .classed("selected-pop", d => d==(control._from_trm && control._from_trm.pop) ? true : false)
-      .attrs(function (d) {
-        var pos = projection([d.posGd.longitude * DEGREES, d.posGd.latitude * DEGREES]);
-        return {
-          x: pos[0],
-          y: pos[1],
-        }
-      })
-      .html(d => val + '<title>' + titlefn(d) + '</title>');
-  };
-
-  drawfn(terminals, "svg.gw", "satellite-dish", "fas", '\uf7c0', d => d.name);
-  drawfn([...pops.values()], "svg.gw", "pop", "far", '\uf111', d => 'POP: ' + d.name);
-
-  // slow: drawfn(satellites, "svg.gw", "fa-satellite", "fas");
-}
-
-function draw_terminal(trm, selected_sats) {
-  var pos = trm.posGd;
-  var r = trm==control._from_trm ? 6 : trm==control._to_trm ? 6 : 2;
-
-  var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.2*r;
-
-  if (control.zen) {
-    if (trm!=control._from_trm && trm!=control._to_trm) return;
-  }
-
-  if (control['sat-to-ground'] || control.zen) {
-    trm.conn.forEach(function(s) {
-      var sat = s[0], lookangles = s[1], dist = s[1].rangeSat;
-
-      if (control.zen) {
-        if (!selected_sats.includes(sat)) return;
-      }
-
-      var el = lookangles.elevation * DEGREES;
-      var min_el = trm.minel;
-
-      if ((el>=min_el && el<=(180-min_el))) {
-        var c = sat_context;
-        route = {type: "LineString", "coordinates": [
-          [pos.longitude * DEGREES, pos.latitude * DEGREES],
-          [sat.posGd.longitude * DEGREES, sat.posGd.latitude * DEGREES]
-        ]};
-        if (el<(min_el+10) || el>(180-min_el-10)) {
-          // warn when elevation angle is close to the allowed minimum
-          c.strokeStyle = "rgba(199, 54, 97, 0.5)";
-        } else {
-          c.strokeStyle = "rgba(54, 199, 170, 0.5)";
-        }
-        if (selected_sats.includes(sat) && (trm==control._from_trm || trm==control._to_trm)) {
-          c.lineWidth = 6;
-        } else {
-          c.lineWidth = 2;
-        }
-        c.beginPath();
-        sat_path(route);
-        c.stroke();
-      }
-    });
-  }
-}
-
-function draw_pop(name, pop) {
-  var pos = pop.posGd;
-  var r = 3;
-
-  var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES, sz=.2*r;
-
-  // POP to GW connections
-  if (1) {
-    pop.gw.forEach(function(gw) {
-      //if (gw!=control._from_trm) return;
-
-      route = {type: "LineString", "coordinates": [
-        [pos.longitude * DEGREES, pos.latitude * DEGREES],
-        [gw.posGd.longitude * DEGREES, gw.posGd.latitude * DEGREES]
-      ]};
-      //console.log(pop.name, gw.name);
-      sat_context.beginPath();
-      sat_context.lineWidth = 4;
-      sat_context.strokeStyle = "rgba(128,128,0,0.5)";
-      sat_path(route);
-      sat_context.stroke();
-    });
-  }
-}
-
-function distance3d(p1, p2) {
-  return Math.sqrt( (p1.x-p2.x)**2 + (p1.y-p2.y)**2 + (p1.z-p2.z)**2 );
-}
-
-
-// https://bl.ocks.org/tuckergordon/raw/ce135a88cd14991761ccdc937179c6c0/
-
-/**
- * @returns {GeoJSON.Polygon} GeoJSON describing the satellite's current footprint on the Earth
- */
-function getFootprint(pos) {
-  var theta = /*this._halfAngle*/ 57 * RADIANS;
-
-  coreAngle = _coreAngle(theta, pos.height, R_EARTH) * DEGREES;
-
-  return d3.geoCircle()
-    .center([pos.longitude * DEGREES, pos.latitude * DEGREES])
-    .radius(coreAngle)();
-};
-
-/**
- * A conical satellite with half angle casts a circle on the Earth. Find the angle
- * from the center of the earth to the radius of this circle
- * @param {number} theta: Satellite half angle in radians
- * @param {number} altitude Satellite altitude
- * @param {number} r Earth radius
- * @returns {number} core angle in radians
- */
-function _coreAngle(theta, altitude, r) {
-  // if FOV is larger than Earth, assume it goes to the tangential point
-  if (Math.sin(theta) > r / (altitude + r)) {
-    return Math.acos(r / (r + altitude));
-  }
-  return Math.abs(Math.asin((r + altitude) * Math.sin(theta) / r)) - theta;
-};
 
 // https://bl.ocks.org/caravinden/eb0e5a2b38c8815919290fa838c6b63b
 // http://bl.ocks.org/charlesdguthrie/11356441
@@ -1709,45 +1207,6 @@ function redraw_graph(time, data_map) {
     //console.log(ct.stats);
   }
 
-}
-
-// adapted from:
-//  https://observablehq.com/@mbostock/solar-terminator
-//  https://bl.ocks.org/vasturiano/9bdeddb97d5c71f425743442761d5384
-function plotshade(time, context, path) {
-  context.clearRect(0,0,width,height);
-  if (control.shade) {
-    var sun = solarPosition(time);
-    var night = d3.geoCircle()
-      .radius(90)
-      .center(antipode(sun))
-    ();
-
-    context.beginPath();
-    path(night);
-    context.fillStyle = "rgba(50,50,50,0.6)";
-    context.fill();
-  }
-}
-
-function get_terminal_shape(ln, lt, sz, height) {
-  var circle = d3.geoCircle().center([ln, lt]).radius(sz);
-  var route = circle();
-  return route;
-}
-
-function get_satellite_shape(ln, lt, sz, height) {
-  // much faster than the geoCircle above
-  var route = {
-    type: "LineString", 
-    coordinates: [
-      [ln-sz, lt-sz, height],
-      [ln+sz, lt-sz, height],
-      [ln+sz, lt+sz, height],
-      [ln-sz, lt+sz, height],
-      [ln-sz, lt-sz, height],
-    ]};
-  return route;
 }
 
 function new_image() {
