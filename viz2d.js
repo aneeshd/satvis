@@ -42,6 +42,7 @@ class Viz2d {
       .attr("width", width)
       .attr("height", height);
     
+    this.div = div;
     this.map_context = this.map_canvas.node().getContext("2d");
     this.sat_context = this.sat_canvas.node().getContext("2d");
     this.shade_context = this.shade_canvas.node().getContext("2d");
@@ -56,6 +57,10 @@ class Viz2d {
     console.log('construct', this);
   }
 
+  destroy() {
+    this.div.remove();
+  }
+  
   update(time, selected_sats) {
     var self = this;
 
@@ -465,7 +470,7 @@ class Viz2d {
 
     if (control['satellite names'] || detail) {
       // FIXME does not respect geo projection if hidden
-      var xy = projection([ln, lt]);
+      var xy = this.projection([ln, lt]);
       sat_context.font = "9px sans-serif";
       sat_context.textAlign = "center";
       sat_context.fillText(name, xy[0], xy[1]+30);
@@ -483,7 +488,7 @@ class Viz2d {
     }
 
     if (control['sat-to-sat']) {
-      for (i=0; i<4; i++) {
+      for (var i=0; i<4; i++) {
         try {
           var s = sat.conn[i][0];
         } catch(e) {
@@ -501,7 +506,7 @@ class Viz2d {
           } else {
             sat_context.strokeStyle = "rgba(0,255,0,0.4)";
           }
-          sat_context.lineWidth = 0.25;
+          sat_context.lineWidth = 2.0;
           sat_path(route);
           sat_context.stroke();
         } catch(e) {

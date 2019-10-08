@@ -167,6 +167,11 @@ text.selected-pop {
 <script src="satellite.js"></script>
 <script src="solar-positions.js"></script>
 <script src="viz2d.js"></script>
+
+<script src="//unpkg.com/three"></script>
+<script src="//unpkg.com/three-trackballcontrols-web/dist/three-trackballcontrols.min.js"></script>
+<script src="//unpkg.com/three-globe"></script>
+<script src="viz3d.js"></script>
 <script>
 
 const font_family = 'calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif';
@@ -249,6 +254,7 @@ class Controls {
   constructor() {
     this.run = true;
     this.speed = 3000;
+    this.mode = '2d';
     this.constellation = 'satellites';
     this.pops = 'pops';
     this.gateways = 'gateways';
@@ -290,6 +296,11 @@ class Controls {
     var f1 = gui.addFolder('Simulation Options');
     f1.add(this, 'run');
     f1.add(this, 'speed');
+    f1.add(this, 'mode', ['2d', '3d']).onChange(function () {
+      control.visualization.destroy();
+      control.visualization = new (control.mode=='2d' ? Viz2d : Viz3d)()
+    });
+
     f1.add(this, 'constellation', CONSTELLATIONS).onChange(
       () => d3.queue().defer(d3.text, no_cache(this.constellation + ".txt"))
                       .await(function(error, satellites) {
@@ -348,7 +359,7 @@ class Controls {
       }
       plot_globe_with_defaults();
     });
-    f2b.add(this, 'projection', PROJECTIONS).onChange(control.visualization.redraw);
+    f2b.add(this, 'projection', PROJECTIONS).onChange(redraw_everything);
     f2b.close();
     f2.open();
     this.f2 = f2;
@@ -398,6 +409,7 @@ class Controls {
 
 class POP {
   constructor(name) {
+    this.type = 'pop';
     this.name = name;
     this.gw = [];
     //console.log('Created POP', name);
@@ -436,11 +448,15 @@ var graph_settings = undefined;
 
 var q = d3.queue();
 
-window.addEventListener("resize", control.visualization.redraw);
+window.addEventListener("resize", redraw_everything);
 
 var world_info = undefined;
 
 var image = undefined;
+
+function redraw_everything() {
+  control.visualization.redraw();
+}
 
 function plot_globe_with_defaults() {
   control.visualization.plot_globe_with_defaults();
@@ -448,7 +464,7 @@ function plot_globe_with_defaults() {
 
 function load_world(world_detailed, world, cables, cable_ls, ixps) {
   world_info = [world_detailed, world, cables, cable_ls, ixps];
-  control.visualization.redraw();
+  redraw_everything();
 }
 
 function parse_lat_lng(x) {
@@ -483,6 +499,7 @@ function load_terminals(data) {
     if (!line.name) return;
     if (line.lat.charAt(0)=='#') return;
     var t = {
+      type: 'terminal',
       id: name,
       name: line.name || name,
       minel: (+line.minel) || 20,
@@ -501,6 +518,7 @@ function load_terminals(data) {
     } else {
       t.pop = pops.get(line.pop);
       pops.get(line.pop).gw.push(t);
+      t.type = 'gw';
       //console.log("GW "+t.name+" connected to "+t.pop.name+" POP");
     }
   });
