@@ -54,7 +54,10 @@ class Viz2d {
     
     this.width = width;
     this.height = height;
-    console.log('construct', this);
+
+    this.image = this.new_image();
+
+    console.log('construct', this, width, height);
   }
 
   destroy() {
@@ -126,7 +129,6 @@ class Viz2d {
       };
     }
 
-    console.log('switching to', control.projection);
     this.projection = eval('d3.geo'+control.projection)()
         .fitSize([width*0.8, height*0.8], topojson.feature(world, world.objects.land))
         .translate([width / 2, height / 2])
@@ -178,6 +180,7 @@ class Viz2d {
   plotglobe(world, graticule, context, path, detailed) {
     context.clearRect(0,0,width,height);
 
+    var image = this.image;
     var image_complete = image.complete && image.width>0 && image.height>0;
 
     if (!detailed || (detailed && !image_complete)) {
@@ -267,6 +270,8 @@ class Viz2d {
 
   // Adapted from http://techslides.com/d3-globe-with-canvas-webgl-and-three-js
   on_image_load() {
+
+    var image = this.image;
 
     var dx = image.width,
         dy = image.height;
@@ -514,8 +519,23 @@ class Viz2d {
         }
       }
     }
-  };
+  }
 
+  set_image_url(url) {
+    if (url === undefined) {
+      this.image = this.new_image();
+    } else {
+      this.image.src = url;
+    }
+  }
+
+  new_image() {
+    var ret = new Image();
+    ret.crossOrigin = "Anonymous";
+    ret.hidden = true;
+    return ret;
+  }
+  
   // adapted from:
   //  https://observablehq.com/@mbostock/solar-terminator
   //  https://bl.ocks.org/vasturiano/9bdeddb97d5c71f425743442761d5384

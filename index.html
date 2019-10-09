@@ -171,6 +171,7 @@ text.selected-pop {
 <script src="//unpkg.com/three"></script>
 <script src="//unpkg.com/three-trackballcontrols-web/dist/three-trackballcontrols.min.js"></script>
 <script src="//unpkg.com/three-globe"></script>
+<script src="//unpkg.com/three-geojson-geometry"></script>
 <script src="viz3d.js"></script>
 <script>
 
@@ -289,6 +290,7 @@ class Controls {
     } else if (this.background=='auto') {
       this.background = current_time.getMonth()+1;
     }
+    // forked from LeszekSwirski
     return 'https://raw.githubusercontent.com/aneeshd/earth-wallpaper/master/images/world.topo.bathy.2004' + String(this.background).padStart(2, '0') + '.3x5400x2700.jpg';
   }
 
@@ -352,11 +354,7 @@ class Controls {
     var f2b = f2.addFolder('Map');
     f2b.add(this, 'background', ['none', 'auto'].concat([...range(1, 12)])).onChange(function () {
       var url = control.get_background_url();
-      if (url === undefined) {
-        image = new_image();
-      } else {
-        image.src = url;
-      }
+      control.visualization.set_image_url(url);
       plot_globe_with_defaults();
     });
     f2b.add(this, 'projection', PROJECTIONS).onChange(redraw_everything);
@@ -451,8 +449,6 @@ var q = d3.queue();
 window.addEventListener("resize", redraw_everything);
 
 var world_info = undefined;
-
-var image = undefined;
 
 function redraw_everything() {
   control.visualization.redraw();
@@ -1227,13 +1223,6 @@ function redraw_graph(time, data_map) {
 
 }
 
-function new_image() {
-  var ret = new Image();
-  ret.crossOrigin = "Anonymous";
-  ret.hidden = true;
-  return ret;
-}
-
 d3.select(self.frameElement).style("height", height + "px");
 
 d3.queue()
@@ -1250,9 +1239,10 @@ d3.queue()
   .defer(d3.json, "https://raw.githubusercontent.com/telegeography/www.internetexchangemap.com/master/public/api/v2/buildings.geojson")
   .await(function(error, world_detailed, world, pops, gateways, terminals, satellites, cables, cable_ls, ixps) {
     if (error) throw error;
-    image = new_image();
-    // forked from LeszekSwirski
-    image.src = control.get_background_url();
+
+    var url = control.get_background_url();
+    control.visualization.set_image_url(url);
+
     load_world(world_detailed, world, cables, cable_ls, ixps);
     control.create_controls();
     load_pops(pops);
