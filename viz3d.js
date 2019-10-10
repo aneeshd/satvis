@@ -80,6 +80,14 @@ class Viz3d {
     // undersea cables
     this.draw_geojson(world_info[2].features, outline_material);
 
+    // cable landing stations
+    var cls_material = new THREE.PointsMaterial({ color: 'rgb(0,100,100)', transparent: true, opacity: 0.5 });
+    this.draw_geojson(world_info[3].features, cls_material);
+
+    // ixps
+    var ixp_material = new THREE.PointsMaterial({ color: 'maroon', transparent: true, opacity: 0.5 });
+    this.draw_geojson(world_info[4].features, ixp_material);
+    
     this.tbControls = tbControls;
     this.scene = scene;
     this.renderer = renderer;
@@ -90,11 +98,20 @@ class Viz3d {
     const self = this;
     const GLOBE_RADIUS = 100;
     features.forEach(({ properties, geometry }) => {
-      var lineObj = new THREE.LineSegments(
-        new THREE.GeoJsonGeometry(geometry, GLOBE_RADIUS),
-        material
-      );
-      self.Globe.parent.add(lineObj);
+      var g = new THREE.GeoJsonGeometry(geometry, GLOBE_RADIUS);
+      if (geometry.type=='MultiLineString' || geometry.type=='MultiPolygon') {
+        var lineObj = new THREE.LineSegments(g, material);
+        self.Globe.parent.add(lineObj);
+      } else if (geometry.type=='Point' || geometry.type=='MultiPoints') {
+        var ptsObj = new THREE.Points(g, material);
+        self.Globe.parent.add(ptsObj);
+      } else if (geometry.type=='LineString' || geometry.type=='Polygon') {
+        var lineObj = new THREE.Line(g, material);
+        self.Globe.parent.add(lineObj);
+      // } else if () {
+      } else {
+        console.log('unknown GeoJson type', geometry);
+      }
     });
   }
 
