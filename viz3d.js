@@ -13,6 +13,10 @@ class Viz3d {
       color: 0x0000ff
     });
 
+    this.s2s_material = new THREE.LineBasicMaterial({
+      color: 0x00ff00
+    });
+
     this.redraw();
   }
 
@@ -29,7 +33,8 @@ class Viz3d {
     Globe = new ThreeGlobe()
         .globeImageUrl(control.get_background_url())
         //.bumpImageUrl('Bump%20map.jpg')
-        .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
+        //.bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
+        .bumpImageUrl('earth-topology.png')
         .showAtmosphere(false)
         .showGraticules(true)
         .customLayerData(satellites)
@@ -70,6 +75,10 @@ class Viz3d {
     // placeholder for sat-to-ground links
     this.s2g_line = new THREE.LineSegments( new THREE.Geometry(), this.s2g_material );
     this.Globe.parent.add(this.s2g_line);
+
+    // placeholder for sat-to-sat links
+    this.s2s_line = new THREE.LineSegments( new THREE.Geometry(), this.s2s_material );
+    this.Globe.parent.add(this.s2s_line);
 
     // countries
     const w = world_detailed;
@@ -133,7 +142,8 @@ class Viz3d {
       // .labelText(d => d.name)
       ;
 
-    this.draw_sat2ground(selected_sats);
+      this.draw_sat2ground(selected_sats);
+      this.draw_sat2sat(selected_sats);
 
     // Frame cycle
     this.tbControls.update();
@@ -176,6 +186,43 @@ class Viz3d {
 
     this.s2g_line = new THREE.LineSegments( s2g_geometry, this.s2g_material );
     this.Globe.parent.add(this.s2g_line);
+  }
+
+  draw_sat2sat(selected_sats) {
+    this.Globe.parent.remove(this.s2s_line);
+
+    var self = this, s2s_geometry = new THREE.Geometry();
+
+    satellites.forEach(function(sat) {
+      if (control.zen && !selected_sats.includes(sat)) return;
+
+      var pos = sat.posGd;
+
+      if (control['sat-to-sat']) {
+        for (var i=0; i<4; i++) {
+          try {
+            var s = sat.conn[i][0];
+          } catch(e) {
+            //console.log('error', sat.name, i);
+            continue;
+          }
+          try {
+            var p1 = self.Globe.getCoords(pos.latitude * DEGREES, pos.longitude * DEGREES, pos.height/6378),
+                p2 = self.Globe.getCoords(s.posGd.latitude * DEGREES, s.posGd.longitude * DEGREES, s.posGd.height/6378);
+            s2s_geometry.vertices.push(
+              new THREE.Vector3(p1.x, p1.y, p1.z),
+              new THREE.Vector3(p2.x, p2.y, p2.z),
+            )
+          } catch(e) {
+            console.log('error', sat.name, s.name, s);
+          }
+        }
+      }
+  
+    });
+
+    this.s2s_line = new THREE.LineSegments( s2s_geometry, this.s2s_material );
+    this.Globe.parent.add(this.s2s_line);
   }
 
   set_image_url(url) {
