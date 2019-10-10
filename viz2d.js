@@ -491,7 +491,7 @@ class Viz2d {
     }
 
     if (control['sat-to-sat']) {
-      for (var i=0; i<4; i++) {
+      for (var i=0; i<2; i++) {
         try {
           var s = sat.conn[i][0];
         } catch(e) {
@@ -505,11 +505,11 @@ class Viz2d {
           ]};
           sat_context.beginPath();
           if (pos.height > control.altitude_threshold) {
-            sat_context.strokeStyle = "rgba(0,0,255,0.4)";
+            sat_context.strokeStyle = "rgba(0,0,255,0.8)";
           } else {
-            sat_context.strokeStyle = "rgba(0,255,0,0.4)";
+            sat_context.strokeStyle = "rgba(0,255,0,0.8)";
           }
-          sat_context.lineWidth = 0.25;
+          sat_context.lineWidth = 1.0;
           sat_path(route);
           sat_context.stroke();
         } catch(e) {
