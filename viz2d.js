@@ -56,8 +56,6 @@ class Viz2d {
     this.height = height;
 
     this.image = this.new_image();
-
-    console.log('construct', this, width, height);
   }
 
   destroy() {
@@ -511,7 +509,7 @@ class Viz2d {
           } else {
             sat_context.strokeStyle = "rgba(0,255,0,0.4)";
           }
-          sat_context.lineWidth = 2.0;
+          sat_context.lineWidth = 0.25;
           sat_path(route);
           sat_context.stroke();
         } catch(e) {

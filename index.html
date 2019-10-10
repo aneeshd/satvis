@@ -550,6 +550,8 @@ class Satellite {
   }
 }
 
+var planes = undefined;
+
 function load_satellites(data) {
   satellites = [];
 
@@ -558,6 +560,9 @@ function load_satellites(data) {
   var lineno = 0;
 
   var lines = data.split("\n");
+
+  planes = new Map();
+
   lines.forEach(function(line) {
     lineno += 1;
     line = line.trim();
@@ -574,6 +579,14 @@ function load_satellites(data) {
       var obj = satellites[satellites.length-1];
       obj.tle2 = line;
       obj.satrec = satellite.twoline2satrec(obj.tle1, obj.tle2);
+      var s = obj.satrec;
+      var f = d3.format('.4f');
+      var k = f(s.inclo) + ":" + f(s.no) + ":" + f(s.nodeo%3.1415);
+      if (!planes.has(k)) {
+        planes.set(k, []);
+      }
+      planes.get(k).push(obj);
+      obj.plane = k;
       return; 
     }
     
@@ -798,7 +811,7 @@ function update_sat2sat(sat) {
   sat.conn = satellites.map(function(s) {
     if (sat==s) return undefined;
     if (sat==undefined || s==undefined) return undefined;
-    //console.log(sat, s); return;
+    if (sat.plane != s.plane) return undefined; // intra-plane only
     try {
       var h = sat.posGd.height / s.posGd.height;
       if (h>1.1 || h<0.8) return undefined; // check

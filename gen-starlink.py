@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # Based on info from http://licensing.fcc.gov
 
 from gen_tle import walker
