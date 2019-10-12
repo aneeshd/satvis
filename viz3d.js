@@ -9,22 +9,29 @@ class Viz3d {
     this.width = window.innerWidth;
     this.height = window.innerHeight;
     
-    this.s2g_material = new THREE.LineBasicMaterial({
+    this.s2g_material1 = new THREE.LineBasicMaterial({
       color: 0x0000ff
+    });
+    this.s2g_material2 = new THREE.LineBasicMaterial({
+      color: 0xff0000
     });
 
     this.s2s_material1 = new THREE.LineBasicMaterial({
-      color: 0x00ff00
+      color: 0x5a0000
     });
     this.s2s_material2 = new THREE.LineBasicMaterial({
-      color: 0x006666
+      color: 0x5a5a00
     });
 
-    this.redraw();
+    this.setup_scene();
   }
 
-  redraw() {
-    if (world_info==undefined) return;
+  setup_scene() {
+    console.log('setup_scene', world_info);
+    if (world_info==undefined) {
+      console.log('no world info');
+      return;
+    }
 
     var world_detailed = world_info[0],
         world = world_info[1];
@@ -35,9 +42,9 @@ class Viz3d {
 
     Globe = new ThreeGlobe()
         .globeImageUrl(control.get_background_url())
-        //.bumpImageUrl('Bump%20map.jpg')
+        .bumpImageUrl('Bump%20map.jpg')
         //.bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
-        .bumpImageUrl('earth-topology.png')
+        //.bumpImageUrl('earth-topology.png')
         .showAtmosphere(false)
         .showGraticules(true)
         .customLayerData(satellites)
@@ -76,57 +83,97 @@ class Viz3d {
     tbControls.zoomSpeed = 0.8;
 
     // placeholder for sat-to-ground links
-    this.s2g_line = new THREE.LineSegments( new THREE.Geometry(), this.s2g_material );
-    this.Globe.parent.add(this.s2g_line);
+    this.s2g_line1 = new THREE.LineSegments( new THREE.Geometry(), this.s2g_material1 );
+    this.Globe.parent.add(this.s2g_line1);
+    this.s2g_line2 = new THREE.LineSegments( new THREE.Geometry(), this.s2g_material2 );
+    this.Globe.parent.add(this.s2g_line2);
 
     // placeholder for sat-to-sat links
-    this.s2s_line1 = new THREE.LineSegments( new THREE.Geometry(), this.s2s_material );
+    this.s2s_line1 = new THREE.LineSegments( new THREE.Geometry(), this.s2s_material1 );
     this.Globe.parent.add(this.s2s_line1);
-    this.s2s_line2 = new THREE.LineSegments( new THREE.Geometry(), this.s2s_material );
+    this.s2s_line2 = new THREE.LineSegments( new THREE.Geometry(), this.s2s_material2 );
     this.Globe.parent.add(this.s2s_line2);
 
     // countries
     const w = world_detailed;
     const countries = topojson.feature(w, w.objects.countries);
     var outline_material = new THREE.LineBasicMaterial({ color: 'white', transparent: true, opacity: 0.1 });
-    this.draw_geojson(countries.features, outline_material);
+    this.countries = this.draw_geojson(countries.features, outline_material);
 
     // undersea cables
-    this.draw_geojson(world_info[2].features, outline_material);
+    this.cables = this.draw_geojson(world_info[2].features, outline_material);
 
     // cable landing stations
     var cls_material = new THREE.PointsMaterial({ color: 'rgb(0,100,100)', transparent: true, opacity: 0.5 });
-    this.draw_geojson(world_info[3].features, cls_material);
+    this.cable_ls = this.draw_geojson(world_info[3].features, cls_material);
 
     // ixps
     var ixp_material = new THREE.PointsMaterial({ color: 'maroon', transparent: true, opacity: 0.5 });
-    this.draw_geojson(world_info[4].features, ixp_material);
-    
+    this.ixps = this.draw_geojson(world_info[4].features, ixp_material);
+
+    // // pop to gw connections
+    // FIXME linewidth does not work; lines are almost impossible to see
+    // var pop_material = new THREE.LineBasicMaterial({ color: 'rgb(128,128,0)', transparent: true, opacity: 0.9, linewidth: 5 });
+    // this.pop_material = pop_material;
+    // var pop_paths = [];
+    // for (var d of pops.entries()) {
+    //   if (d[0]==undefined || d[1]==undefined) continue;
+    //   var pop = d[1];
+    //   var pos = pop.posGd;
+    //   pop.gw.forEach(function(gw) {
+    //     var route = {type: "Feature", geometry: {type: "LineString", "coordinates": [
+    //       [pos.longitude * DEGREES, pos.latitude * DEGREES],
+    //       [gw.posGd.longitude * DEGREES, gw.posGd.latitude * DEGREES]
+    //     ]}};
+    //     pop_paths.push(route);
+    //   });
+    // }
+    // this.pops = this.draw_geojson(pop_paths, pop_material);
+
     this.tbControls = tbControls;
     this.scene = scene;
     this.renderer = renderer;
     this.camera = camera;
+
+    this.redraw();
+  }
+
+  redraw() {
+    this.cables.visible = control.cables;
+    this.cable_ls.visible = control.cables;
+    this.ixps.visible = control.ixps;
+    if (this.width != window.innerWidth || this.height != window.innerHeight) {
+      this.width = window.innerWidth;
+      this.height = window.innerHeight;
+      this.renderer.setSize(this.width, this.height);
+      this.camera.aspect = this.width/this.height;
+      this.camera.updateProjectionMatrix();
+    }
+    requestAnimationFrame(() => 0);
   }
 
   draw_geojson(features, material) {
     const self = this;
     const GLOBE_RADIUS = 100;
+    var ret = new THREE.Group();
     features.forEach(({ properties, geometry }) => {
       var g = new THREE.GeoJsonGeometry(geometry, GLOBE_RADIUS);
       if (geometry.type=='MultiLineString' || geometry.type=='MultiPolygon') {
         var lineObj = new THREE.LineSegments(g, material);
-        self.Globe.parent.add(lineObj);
+        ret.add(lineObj);
       } else if (geometry.type=='Point' || geometry.type=='MultiPoints') {
         var ptsObj = new THREE.Points(g, material);
-        self.Globe.parent.add(ptsObj);
+        ret.add(ptsObj);
       } else if (geometry.type=='LineString' || geometry.type=='Polygon') {
         var lineObj = new THREE.Line(g, material);
-        self.Globe.parent.add(lineObj);
+        ret.add(lineObj);
       // } else if () {
       } else {
         console.log('unknown GeoJson type', geometry);
       }
     });
+    self.Globe.parent.add(ret);
+    return ret;
   }
 
   destroy() {
@@ -139,8 +186,9 @@ class Viz3d {
       .pointsData([...pops.values()].concat(terminals))
       .pointLat(d => d.posGd.latitude * DEGREES)
       .pointLng(d => d.posGd.longitude * DEGREES)
-      .pointAltitude(0.05)
+      .pointAltitude(d => d==control._from_trm || d==control._to_trm || (control._from_trm && d==control._from_trm.pop) ? 0.1 : 0.01)
       .pointColor(d => d.type=='pop' ? 'navy' : 'steelblue')
+      .pointsTransitionDuration(100)
       // .labelsData([...pops.values()].concat(terminals))
       // .labelLat(d => d.posGd.latitude * DEGREES)
       // .labelLng(d => d.posGd.longitude * DEGREES)
@@ -157,9 +205,12 @@ class Viz3d {
   }
 
   draw_sat2ground(selected_sats) {
-    this.Globe.parent.remove(this.s2g_line);
+    this.Globe.parent.remove(this.s2g_line1);
+    this.Globe.parent.remove(this.s2g_line2);
 
-    var self = this, s2g_geometry = new THREE.Geometry();
+    var self = this, 
+        s2g_geometry1 = new THREE.Geometry(),
+        s2g_geometry2 = new THREE.Geometry();
 
     terminals.forEach(function(trm) {
       var pos = trm.posGd;
@@ -171,7 +222,7 @@ class Viz3d {
         if (trm!=control._from_trm && trm!=control._to_trm) return;
       }
 
-      if (control['sat-to-ground'] || control.zen) {
+      if (control.s2g || control.zen) {
         trm.conn.forEach(function(s) {
           var sat = s[0], lookangles = s[1], dist = s[1].rangeSat;
 
@@ -179,9 +230,13 @@ class Viz3d {
             if (!selected_sats.includes(sat)) return;
           }
 
-          var p1 = self.Globe.getCoords(pos.latitude * DEGREES, pos.longitude * DEGREES, 0),
-              p2 = self.Globe.getCoords(sat.posGd.latitude * DEGREES, sat.posGd.longitude * DEGREES, sat.posGd.height/6378);
-          s2g_geometry.vertices.push(
+          var p1 = self.Globe.getCoords(lt, ln, 0),
+              p2 = self.Globe.getCoords(sat.posGd.latitude * DEGREES, sat.posGd.longitude * DEGREES, sat.posGd.height/6378),
+              el = lookangles.elevation * DEGREES,
+              min_el = trm.minel,
+              geom = (el>=(min_el+10) && el<=(180-min_el-10)) ? s2g_geometry1 : s2g_geometry2;
+      
+          geom.vertices.push(
             new THREE.Vector3(p1.x, p1.y, p1.z),
             new THREE.Vector3(p2.x, p2.y, p2.z),
           )
@@ -189,8 +244,10 @@ class Viz3d {
       }
     });
 
-    this.s2g_line = new THREE.LineSegments( s2g_geometry, this.s2g_material );
-    this.Globe.parent.add(this.s2g_line);
+    this.s2g_line1 = new THREE.LineSegments( s2g_geometry1, this.s2g_material1 );
+    this.Globe.parent.add(this.s2g_line1);
+    this.s2g_line2 = new THREE.LineSegments( s2g_geometry2, this.s2g_material2 );
+    this.Globe.parent.add(this.s2g_line2);
   }
 
   draw_sat2sat(selected_sats) {
@@ -204,28 +261,26 @@ class Viz3d {
     satellites.forEach(function(sat) {
       if (control.zen && !selected_sats.includes(sat)) return;
 
-      if (control['sat-to-sat']) {
+      if (control.s2s) {
         var pos = sat.posGd,
-            p1 = self.Globe.getCoords(pos.latitude * DEGREES, pos.longitude * DEGREES, pos.height/6378);
+            p1 = self.Globe.getCoords(pos.latitude * DEGREES, pos.longitude * DEGREES, pos.height/6378),
+            geom = pos.height > control.altitude_threshold ? s2s_geometry1 : s2s_geometry2;
 
-        for (var i=0; i<4; i++) {
+        for (var i=0; i<control.isl.num; i++) {
           try {
-            var s = sat.conn[i][0];
+            var s = sat.conn[i];
+            // if (s.conn.map(d => d[0]).indexOf(sat)==-1) continue;
           } catch(e) {
             //console.log('error', sat.name, i);
             continue;
           }
-          {
-            var p2 = self.Globe.getCoords(s.posGd.latitude * DEGREES, s.posGd.longitude * DEGREES, s.posGd.height/6378),
-                geom = pos.height > control.altitude_threshold ? s2s_geometry1 : s2s_geometry2;
 
-            geom.vertices.push(
-              new THREE.Vector3(p1.x, p1.y, p1.z),
-              new THREE.Vector3(p2.x, p2.y, p2.z),
-            );
-          // } catch(e) {
-          //   console.log('error', sat.name, s.name, s);
-          }
+          var p2 = self.Globe.getCoords(s.posGd.latitude * DEGREES, s.posGd.longitude * DEGREES, s.posGd.height/6378);
+
+          geom.vertices.push(
+            new THREE.Vector3(p1.x, p1.y, p1.z),
+            new THREE.Vector3(p2.x, p2.y, p2.z),
+          );
         }
       }
   
@@ -247,7 +302,7 @@ class Viz3d {
   }
 
   plot_globe_with_defaults() {
-    //this.plotglobe(world_info[0], this.graticule, this.map_context, this.map_path, true);
+    this.redraw();
   }
 
 }

@@ -93,8 +93,8 @@ class Viz2d {
     var world_detailed = world_info[0],
         world = world_info[1];
 
-    this.width = Math.floor( window.innerWidth );
-    this.height = Math.floor( window.innerHeight );
+    this.width = Math.floor( window.innerWidth - 20 );
+    this.height = Math.floor( window.innerHeight - 20 );
 
     var width = this.width,
         height = this.height;
@@ -201,13 +201,13 @@ class Viz2d {
       }
     }
 
-    context.strokeStyle = "rgb(214,210,213)";
+    context.strokeStyle = "rgba(214,210,213,0.5)";
     context.beginPath();
     path(topojson.feature(world, world.objects.countries));
     context.lineWidth = 1;
     context.stroke();
 
-    context.strokeStyle = "#eee";
+    context.strokeStyle = "rgba(211,211,211,0.1)";
     context.beginPath();
     path(graticule());
     context.lineWidth = 1;
@@ -368,7 +368,7 @@ class Viz2d {
       if (trm!=control._from_trm && trm!=control._to_trm) return;
     }
 
-    if (control['sat-to-ground'] || control.zen) {
+    if (control.s2g || control.zen) {
       trm.conn.forEach(function(s) {
         var sat = s[0], lookangles = s[1], dist = s[1].rangeSat;
 
@@ -471,7 +471,7 @@ class Viz2d {
     sat_path(route);
     sat_context.fill();
 
-    if (control['satellite names'] || detail) {
+    if (control.sat_names || detail) {
       // FIXME does not respect geo projection if hidden
       var xy = this.projection([ln, lt]);
       sat_context.font = "9px sans-serif";
@@ -490,10 +490,20 @@ class Viz2d {
       shade_context.stroke();
     }
 
-    if (control['sat-to-sat']) {
-      for (var i=0; i<2; i++) {
+    function sat_in_conns(s, conns) {
+      for (var i=0; i<conns.length; i++) {
+        if (conns[i]==s) return true;
+      }
+      return false;
+    }
+
+    if (control.s2s) {
+      for (var i=0; i<control.isl.num; i++) {
         try {
-          var s = sat.conn[i][0];
+          var s = sat.conn[i];
+          if (s===undefined) continue;
+          if (s.conn===undefined) continue;
+          if (!sat_in_conns(sat, s.conn.slice(0, control.isl.num))) continue;
         } catch(e) {
           //console.log('error', sat.name, i);
           continue;
