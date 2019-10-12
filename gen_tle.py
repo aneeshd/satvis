@@ -44,7 +44,7 @@ def format_tle(satnum, epoch_year, inclination, right_ascension, eccentricity, p
 if __name__=='__main__':
     import sys
     if len(sys.argv)<8:
-        print('''Usage: gen-tle.py prefix inclination #sat #planes delta-RAAN altitude TAP [tap0=0] [satnum0=80000]
+        print('''Usage: gen_tle.py prefix inclination #sat #planes delta-RAAN altitude TAP [tap0=0] [satnum0=80000]
 
 Generates TLE data for a Walker Delta constellation.
     i: t/p/f --> inclination #sat #planes delta-RAAN
@@ -52,7 +52,7 @@ Generates TLE data for a Walker Delta constellation.
 
 eg: For the planned OneWeb system:
 
-    gen-tle.py I 86.4 40*18 18 10 1200 3.3''')
+    gen_tle.py I 86.4 40*18 18 10 1200 3.3''')
         sys.exit(1)
 
     cmd = 'walker("'+sys.argv[1]+'", '+', '.join(sys.argv[2:])+')'

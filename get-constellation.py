@@ -33,5 +33,13 @@ def main(cname, ids):
         print(result, end='', file=f)
 
 if __name__=='__main__':
-    cname = sys.argv[1]
-    main(cname, constellations[cname])
+    try:
+        cname = sys.argv[1]
+    except IndexError:
+        cname = 'all'
+
+    if cname == 'all':
+        for c in constellations.keys():
+            main(c, constellations[c])
+    else:
+        main(cname, constellations[cname])
