@@ -166,14 +166,12 @@ text.selected-pop {
 <script src="https://unpkg.com/simple-statistics@7.0.2/dist/simple-statistics.min.js"></script>
 <script src="satellite.js"></script>
 <script src="solar-positions.js"></script>
-<zzscript src="viz2d.js"></zzscript>
 <script>document.write('<script src="/viz2d.js?dev=' + Math.floor(Math.random() * 10000) + '"\><\/script>');</script>
 
 <script src="//unpkg.com/three"></script>
 <script src="//unpkg.com/three-trackballcontrols-web/dist/three-trackballcontrols.min.js"></script>
 <script src="//unpkg.com/three-globe"></script>
 <script src="//unpkg.com/three-geojson-geometry"></script>
-<zzscript src="viz3d.js"></zzscript>
 <script>document.write('<script src="/viz3d.js?dev=' + Math.floor(Math.random() * 10000) + '"\><\/script>');</script>
 <script>
 
@@ -213,9 +211,9 @@ function no_cache(x) { return x + '?' + Math.floor(Math.random() * 100000); }
 
 // https://dev.to/ycmjason/how-to-create-range-in-javascript-539i
 function* range(start, end) {
-    yield start;
-    if (start === end) return;
-    yield* range(start + 1, end);
+  yield start;
+  if (start === end) return;
+  yield* range(start + 1, end);
 }
 
 // https://stackoverflow.com/a/7579799
@@ -291,6 +289,7 @@ class Controls {
     this._to_trm = undefined;
 
     this.visualization = this.mode == '2d' ? new Viz2d() : new Viz3d();
+    console.log('Control fully created');
   }
 
   get_background_url() {
@@ -474,6 +473,7 @@ function plot_globe_with_defaults() {
 }
 
 function load_world(world_detailed, world, cables, cable_ls, ixps) {
+  console.log("world info loaded");
   world_info = [world_detailed, world, cables, cable_ls, ixps];
   redraw_everything();
 }
@@ -802,6 +802,7 @@ function update_sat(sat, time, gmst) {
   sat.posGd = positionGd;
   sat.eci = positionEci;
   sat.ecf = satellite.eciToEcf(positionEci, gmst);
+  sat.vel = velocityEci;
 };
 
 function update_terminal(trm, gmst) {
@@ -1275,10 +1276,12 @@ d3.queue()
   .await(function(error, world_detailed, world, pops, gateways, terminals, satellites, cables, cable_ls, ixps) {
     if (error) throw error;
 
+    load_world(world_detailed, world, cables, cable_ls, ixps);
+
     var url = control.get_background_url();
+    console.log('setting new background url', url);
     control.visualization.set_image_url(url);
 
-    load_world(world_detailed, world, cables, cable_ls, ixps);
     control.create_controls();
     load_pops(pops);
     load_terminals(gateways.concat(terminals));

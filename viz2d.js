@@ -56,6 +56,7 @@ class Viz2d {
     this.height = height;
 
     this.image = this.new_image();
+    console.log("Viz2D constructor done");
   }
 
   destroy() {
@@ -88,7 +89,10 @@ class Viz2d {
 
   redraw() {
 
-    if (world_info==undefined) return;
+    if (world_info==undefined) {
+      console.log("no world info");
+      return;
+    }
 
     var world_detailed = world_info[0],
         world = world_info[1];

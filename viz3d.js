@@ -23,13 +23,16 @@ class Viz3d {
       color: 0x5a5a00
     });
 
+    this.scene_ready = false;
     this.setup_scene();
+    console.log("Viz3D constructor done");
   }
 
   setup_scene() {
     console.log('setup_scene', world_info);
     if (world_info==undefined) {
       console.log('no world info');
+      this.scene_ready = false;
       return;
     }
 
@@ -135,10 +138,16 @@ class Viz3d {
     this.renderer = renderer;
     this.camera = camera;
 
+    this.scene_ready = true;
     this.redraw();
   }
 
   redraw() {
+    if (!this.scene_ready) {
+      this.setup_scene(); // calls redraw if everything ok
+      return;
+    }
+
     this.cables.visible = control.cables;
     this.cable_ls.visible = control.cables;
     this.ixps.visible = control.ixps;
@@ -294,6 +303,9 @@ class Viz3d {
 
   set_image_url(url) {
     console.log('set url', url);
+    if (!this.scene_ready) {
+      this.setup_scene();
+    }
     if (url === undefined) {
       this.Globe.globeImageUrl(null);
     } else {
