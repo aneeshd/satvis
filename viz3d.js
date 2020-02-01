@@ -45,9 +45,7 @@ class Viz3d {
 
     Globe = new ThreeGlobe()
         .globeImageUrl(control.get_background_url())
-        .bumpImageUrl('Bump%20map.jpg')
-        //.bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
-        //.bumpImageUrl('earth-topology.png')
+        .bumpImageUrl('https://raw.githubusercontent.com/aneeshd/three-globe/master/example/img/earth-topology.png')
         .showAtmosphere(false)
         .showGraticules(true)
         .customLayerData(satellites)
