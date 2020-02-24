@@ -1,2 +1,4 @@
 *.tle
-
+__pycache__
+telesat-*.txt
+*planned.txt

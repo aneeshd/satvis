@@ -166,7 +166,13 @@ text.selected-pop {
 <script src="https://unpkg.com/simple-statistics@7.0.2/dist/simple-statistics.min.js"></script>
 <script src="satellite.js"></script>
 <script src="solar-positions.js"></script>
-<script src="viz2d.js"></script>
+<script>document.write('<script src="/viz2d.js?dev=' + Math.floor(Math.random() * 10000) + '"\><\/script>');</script>
+
+<script src="//unpkg.com/three"></script>
+<script src="//unpkg.com/three-trackballcontrols-web/dist/three-trackballcontrols.min.js"></script>
+<script src="//unpkg.com/three-globe"></script>
+<script src="//unpkg.com/three-geojson-geometry"></script>
+<script>document.write('<script src="/viz3d.js?dev=' + Math.floor(Math.random() * 10000) + '"\><\/script>');</script>
 <script>
 
 const font_family = 'calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif';
@@ -183,7 +189,7 @@ const CONSTELLATIONS = [
   'o3b', 
   'gx', 
   'oneweb', 
-  'oneweb-a', 
+  'oneweb-planned', 
   'starlink',
   'starlink-planned',
 ];
@@ -205,9 +211,9 @@ function no_cache(x) { return x + '?' + Math.floor(Math.random() * 100000); }
 
 // https://dev.to/ycmjason/how-to-create-range-in-javascript-539i
 function* range(start, end) {
-    yield start;
-    if (start === end) return;
-    yield* range(start + 1, end);
+  yield start;
+  if (start === end) return;
+  yield* range(start + 1, end);
 }
 
 // https://stackoverflow.com/a/7579799
@@ -218,17 +224,17 @@ function seconds2time(seconds) {
   var time = "";
 
   if (hours != 0) {
-    time = hours+":";
+    time = hours+"h:";
   }
   if (minutes != 0 || time !== "") {
     minutes = (minutes < 10 && time !== "") ? "0"+minutes : String(minutes);
-    time += minutes+":";
+    time += minutes+"m:";
   }
   if (time === "") {
     time = seconds+"s";
   }
   else {
-    time += (seconds < 10) ? "0"+seconds : String(seconds);
+    time += ((seconds < 10) ? "0"+seconds : String(seconds)) + "s";
   }
   return time;
 }
@@ -249,16 +255,24 @@ class Controls {
   constructor() {
     this.run = true;
     this.speed = 3000;
+    this.mode = '2d';
     this.constellation = 'satellites';
     this.pops = 'pops';
     this.gateways = 'gateways';
     this.users = 'terminals';
 
+    this.isl = {
+      num: 4,
+      //intraplane: true,
+      interplane: false,
+      //crossseam: false,
+    };
+
     this.zen = false;
-    this.shade = true;
-    this['satellite names'] = false;
-    this['sat-to-ground'] = true;
-    this['sat-to-sat'] = false;
+    this.shade = false;
+    this.sat_names = false;
+    this.s2g = true;
+    this.s2s = false;
     this.FOV = false;
     this.altitude_threshold = 1100;
     this['low-altitude'] = true;
@@ -274,7 +288,8 @@ class Controls {
     this._from_trm = undefined;
     this._to_trm = undefined;
 
-    this.visualization = new Viz2d();
+    this.visualization = this.mode == '2d' ? new Viz2d() : new Viz3d();
+    console.log('Control fully created');
   }
 
   get_background_url() {
@@ -283,6 +298,7 @@ class Controls {
     } else if (this.background=='auto') {
       this.background = current_time.getMonth()+1;
     }
+    // forked from LeszekSwirski
     return 'https://raw.githubusercontent.com/aneeshd/earth-wallpaper/master/images/world.topo.bathy.2004' + String(this.background).padStart(2, '0') + '.3x5400x2700.jpg';
   }
 
@@ -290,6 +306,15 @@ class Controls {
     var f1 = gui.addFolder('Simulation Options');
     f1.add(this, 'run');
     f1.add(this, 'speed');
+    f1.add(this, 'mode', ['2d', '3d']).onChange(function () {
+      control.visualization.destroy();
+      control.visualization = new (control.mode=='2d' ? Viz2d : Viz3d)();
+      // refactor
+      var url = control.get_background_url();
+      control.visualization.set_image_url(url);
+      redraw_everything();
+    });
+
     f1.add(this, 'constellation', CONSTELLATIONS).onChange(
       () => d3.queue().defer(d3.text, no_cache(this.constellation + ".txt"))
                       .await(function(error, satellites) {
@@ -321,6 +346,12 @@ class Controls {
                         load_terminals(gateways.concat(users));
                       }));
 
+    var f1a = f1.addFolder('ISL');
+    f1a.add(this.isl, 'num');
+    //f1a.add(this.isl, 'intraplane');
+    f1a.add(this.isl, 'interplane');
+    //f1a.add(this.isl, 'crossseam');
+    f1a.close();
     f1.open();
     this.f1 = f1;
 
@@ -331,9 +362,9 @@ class Controls {
     // f2.add(this, 'low-altitude');//.onChange(enabled => d3.selectAll('.lowaltitude').style('display', enabled ? null : 'none'));
     // f2.add(this, 'high-altitude');//.onChange(enabled => d3.selectAll('.highaltitude').style('display', enabled ? null : 'none'));
     var f2a = f2.addFolder('Layers');
-    f2a.add(this, 'satellite names');
-    f2a.add(this, 'sat-to-ground');
-    f2a.add(this, 'sat-to-sat');
+    f2a.add(this, 'sat_names').name('satellite names');
+    f2a.add(this, 's2g').name('sat-to-ground');
+    f2a.add(this, 's2s').name('sat-to-sat');
     f2a.add(this, 'shade');
     f2a.add(this, 'cables').onChange(() => plot_globe_with_defaults());
     f2a.add(this, 'ixps').onChange(() => plot_globe_with_defaults());
@@ -341,14 +372,10 @@ class Controls {
     var f2b = f2.addFolder('Map');
     f2b.add(this, 'background', ['none', 'auto'].concat([...range(1, 12)])).onChange(function () {
       var url = control.get_background_url();
-      if (url === undefined) {
-        image = new_image();
-      } else {
-        image.src = url;
-      }
+      control.visualization.set_image_url(url);
       plot_globe_with_defaults();
     });
-    f2b.add(this, 'projection', PROJECTIONS).onChange(control.visualization.redraw);
+    f2b.add(this, 'projection', PROJECTIONS).onChange(redraw_everything);
     f2b.close();
     f2.open();
     this.f2 = f2;
@@ -398,6 +425,7 @@ class Controls {
 
 class POP {
   constructor(name) {
+    this.type = 'pop';
     this.name = name;
     this.gw = [];
     //console.log('Created POP', name);
@@ -436,19 +464,22 @@ var graph_settings = undefined;
 
 var q = d3.queue();
 
-window.addEventListener("resize", control.visualization.redraw);
+window.addEventListener("resize", redraw_everything);
 
 var world_info = undefined;
 
-var image = undefined;
+function redraw_everything() {
+  control.visualization.redraw();
+}
 
 function plot_globe_with_defaults() {
   control.visualization.plot_globe_with_defaults();
 }
 
 function load_world(world_detailed, world, cables, cable_ls, ixps) {
+  console.log("world info loaded");
   world_info = [world_detailed, world, cables, cable_ls, ixps];
-  control.visualization.redraw();
+  redraw_everything();
 }
 
 function parse_lat_lng(x) {
@@ -483,6 +514,7 @@ function load_terminals(data) {
     if (!line.name) return;
     if (line.lat.charAt(0)=='#') return;
     var t = {
+      type: 'terminal',
       id: name,
       name: line.name || name,
       minel: (+line.minel) || 20,
@@ -501,6 +533,7 @@ function load_terminals(data) {
     } else {
       t.pop = pops.get(line.pop);
       pops.get(line.pop).gw.push(t);
+      t.type = 'gw';
       //console.log("GW "+t.name+" connected to "+t.pop.name+" POP");
     }
   });
@@ -536,6 +569,8 @@ class Satellite {
   }
 }
 
+var planes = undefined;
+
 function load_satellites(data) {
   satellites = [];
 
@@ -544,6 +579,9 @@ function load_satellites(data) {
   var lineno = 0;
 
   var lines = data.split("\n");
+
+  planes = new Map();
+
   lines.forEach(function(line) {
     lineno += 1;
     line = line.trim();
@@ -560,6 +598,14 @@ function load_satellites(data) {
       var obj = satellites[satellites.length-1];
       obj.tle2 = line;
       obj.satrec = satellite.twoline2satrec(obj.tle1, obj.tle2);
+      var s = obj.satrec;
+      var f = d3.format('.4f');
+      var k = f(s.inclo) + ":" + f(s.no) + ":" + f(s.nodeo);
+      if (!planes.has(k)) {
+        planes.set(k, []);
+      }
+      planes.get(k).push(obj);
+      obj.plane = k;
       return; 
     }
     
@@ -592,6 +638,7 @@ function run() {
   });
 }
 
+var fff=true;
 function run_iteration() {
   var time = new Date(current_time);
 
@@ -618,6 +665,10 @@ function run_iteration() {
     satellites.forEach(function(d) {
       update_sat2sat(d);
     });
+    if (control.s2s && fff) console.log(satellites.map(d => ({from: d.name, 
+                                               to: d.conn && d.conn.map(x => x.name)})
+                                       ));
+    if (control.s2s) fff=false;
 
     if (control.conntrack != undefined) {
       control.conntrack.update(time);
@@ -755,6 +806,7 @@ function update_sat(sat, time, gmst) {
   sat.posGd = positionGd;
   sat.eci = positionEci;
   sat.ecf = satellite.eciToEcf(positionEci, gmst);
+  sat.vel = velocityEci;
 };
 
 function update_terminal(trm, gmst) {
@@ -779,12 +831,12 @@ function update_terminal(trm, gmst) {
 }
 
 function update_sat2sat(sat) {
-  if (!control['sat-to-sat']) return;
+  if (!control.s2s) return;
 
   sat.conn = satellites.map(function(s) {
     if (sat==s) return undefined;
     if (sat==undefined || s==undefined) return undefined;
-    //console.log(sat, s); return;
+    if (sat.plane != s.plane && !control.isl.interplane) return undefined; // intra-plane only
     try {
       var h = sat.posGd.height / s.posGd.height;
       if (h>1.1 || h<0.8) return undefined; // check
@@ -795,10 +847,12 @@ function update_sat2sat(sat) {
   })
   .filter(x => x!=undefined)
   // restrict distance (FIXME: need real criteria)
-  .filter(x => x[1]>1000 && x[1]<5000)
+  //.filter(x => x[1]>1000 && x[1]<5000)
   // TODO: restrict based on pointing limitations
   // sort by distance (closest to furthest)
   .sort((a,b) => a[1]-b[1])
+  // discard distance
+  .map(d => d[0])
   ;
 }
 
@@ -1209,13 +1263,6 @@ function redraw_graph(time, data_map) {
 
 }
 
-function new_image() {
-  var ret = new Image();
-  ret.crossOrigin = "Anonymous";
-  ret.hidden = true;
-  return ret;
-}
-
 d3.select(self.frameElement).style("height", height + "px");
 
 d3.queue()
@@ -1232,10 +1279,13 @@ d3.queue()
   .defer(d3.json, "https://raw.githubusercontent.com/telegeography/www.internetexchangemap.com/master/public/api/v2/buildings.geojson")
   .await(function(error, world_detailed, world, pops, gateways, terminals, satellites, cables, cable_ls, ixps) {
     if (error) throw error;
-    image = new_image();
-    // forked from LeszekSwirski
-    image.src = control.get_background_url();
+
     load_world(world_detailed, world, cables, cable_ls, ixps);
+
+    var url = control.get_background_url();
+    console.log('setting new background url', url);
+    control.visualization.set_image_url(url);
+
     control.create_controls();
     load_pops(pops);
     load_terminals(gateways.concat(terminals));

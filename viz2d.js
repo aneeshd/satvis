@@ -42,6 +42,7 @@ class Viz2d {
       .attr("width", width)
       .attr("height", height);
     
+    this.div = div;
     this.map_context = this.map_canvas.node().getContext("2d");
     this.sat_context = this.sat_canvas.node().getContext("2d");
     this.shade_context = this.shade_canvas.node().getContext("2d");
@@ -53,9 +54,15 @@ class Viz2d {
     
     this.width = width;
     this.height = height;
-    console.log('construct', this);
+
+    this.image = this.new_image();
+    console.log("Viz2D constructor done");
   }
 
+  destroy() {
+    this.div.remove();
+  }
+  
   update(time, selected_sats) {
     var self = this;
 
@@ -82,13 +89,16 @@ class Viz2d {
 
   redraw() {
 
-    if (world_info==undefined) return;
+    if (world_info==undefined) {
+      console.log("no world info");
+      return;
+    }
 
     var world_detailed = world_info[0],
         world = world_info[1];
 
-    this.width = Math.floor( window.innerWidth );
-    this.height = Math.floor( window.innerHeight );
+    this.width = Math.floor( window.innerWidth - 20 );
+    this.height = Math.floor( window.innerHeight - 20 );
 
     var width = this.width,
         height = this.height;
@@ -121,7 +131,6 @@ class Viz2d {
       };
     }
 
-    console.log('switching to', control.projection);
     this.projection = eval('d3.geo'+control.projection)()
         .fitSize([width*0.8, height*0.8], topojson.feature(world, world.objects.land))
         .translate([width / 2, height / 2])
@@ -173,6 +182,7 @@ class Viz2d {
   plotglobe(world, graticule, context, path, detailed) {
     context.clearRect(0,0,width,height);
 
+    var image = this.image;
     var image_complete = image.complete && image.width>0 && image.height>0;
 
     if (!detailed || (detailed && !image_complete)) {
@@ -195,13 +205,13 @@ class Viz2d {
       }
     }
 
-    context.strokeStyle = "rgb(214,210,213)";
+    context.strokeStyle = "rgba(214,210,213,0.5)";
     context.beginPath();
     path(topojson.feature(world, world.objects.countries));
     context.lineWidth = 1;
     context.stroke();
 
-    context.strokeStyle = "#eee";
+    context.strokeStyle = "rgba(211,211,211,0.1)";
     context.beginPath();
     path(graticule());
     context.lineWidth = 1;
@@ -262,6 +272,8 @@ class Viz2d {
 
   // Adapted from http://techslides.com/d3-globe-with-canvas-webgl-and-three-js
   on_image_load() {
+
+    var image = this.image;
 
     var dx = image.width,
         dy = image.height;
@@ -360,7 +372,7 @@ class Viz2d {
       if (trm!=control._from_trm && trm!=control._to_trm) return;
     }
 
-    if (control['sat-to-ground'] || control.zen) {
+    if (control.s2g || control.zen) {
       trm.conn.forEach(function(s) {
         var sat = s[0], lookangles = s[1], dist = s[1].rangeSat;
 
@@ -463,9 +475,9 @@ class Viz2d {
     sat_path(route);
     sat_context.fill();
 
-    if (control['satellite names'] || detail) {
+    if (control.sat_names || detail) {
       // FIXME does not respect geo projection if hidden
-      var xy = projection([ln, lt]);
+      var xy = this.projection([ln, lt]);
       sat_context.font = "9px sans-serif";
       sat_context.textAlign = "center";
       sat_context.fillText(name, xy[0], xy[1]+30);
@@ -482,10 +494,20 @@ class Viz2d {
       shade_context.stroke();
     }
 
-    if (control['sat-to-sat']) {
-      for (i=0; i<4; i++) {
+    function sat_in_conns(s, conns) {
+      for (var i=0; i<conns.length; i++) {
+        if (conns[i]==s) return true;
+      }
+      return false;
+    }
+
+    if (control.s2s) {
+      for (var i=0; i<control.isl.num; i++) {
         try {
-          var s = sat.conn[i][0];
+          var s = sat.conn[i];
+          if (s===undefined) continue;
+          if (s.conn===undefined) continue;
+          if (!sat_in_conns(sat, s.conn.slice(0, control.isl.num))) continue;
         } catch(e) {
           //console.log('error', sat.name, i);
           continue;
@@ -497,11 +519,11 @@ class Viz2d {
           ]};
           sat_context.beginPath();
           if (pos.height > control.altitude_threshold) {
-            sat_context.strokeStyle = "rgba(0,0,255,0.4)";
+            sat_context.strokeStyle = "rgba(0,0,255,0.8)";
           } else {
-            sat_context.strokeStyle = "rgba(0,255,0,0.4)";
+            sat_context.strokeStyle = "rgba(0,255,0,0.8)";
           }
-          sat_context.lineWidth = 0.25;
+          sat_context.lineWidth = 1.0;
           sat_path(route);
           sat_context.stroke();
         } catch(e) {
@@ -509,8 +531,23 @@ class Viz2d {
         }
       }
     }
-  };
+  }
 
+  set_image_url(url) {
+    if (url === undefined) {
+      this.image = this.new_image();
+    } else {
+      this.image.src = url;
+    }
+  }
+
+  new_image() {
+    var ret = new Image();
+    ret.crossOrigin = "Anonymous";
+    ret.hidden = true;
+    return ret;
+  }
+  
   // adapted from:
   //  https://observablehq.com/@mbostock/solar-terminator
   //  https://bl.ocks.org/vasturiano/9bdeddb97d5c71f425743442761d5384
