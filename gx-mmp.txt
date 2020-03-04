@@ -1,7 +1,0 @@
-lat	lng	name
-# https://www.inmarsat.com/support/carrier/
-# https://www.inmarsat.com/about-us/our-satellites/our-ground-network/
-# Not sure if Sydney or Hong Kong or both
--33.8688	151.2093	Sydney
-52.36800	4.903600	Amsterdam
-40.71280	-74.0060	New York

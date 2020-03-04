@@ -1,0 +1,54 @@
+- lat: -36.8485
+  lng: 174.7633
+  minel: 10
+  name: Auckland
+  pop: Sydney
+- lat: 53.2733
+  lng: 6.2299
+  minel: 10
+  name: Burum
+  pop: Amsterdam
+- lat: 41.995
+  lng: 13.5472
+  minel: 10
+  name: Fucino
+  pop: Amsterdam
+- lat: 46.6182
+  lng: -75.0181
+  minel: 10
+  name: Laurentides
+  pop: New York
+- lat: 45.1602
+  lng: -93.0888
+  minel: 10
+  name: Lino Lakes
+  pop: New York
+- lat: 37.8213
+  lng: 22.661
+  minel: 10
+  name: Nemea
+  pop: Amsterdam
+- lat: 21.6816667
+  lng: -158.0386111
+  minel: 10
+  name: Paumalu
+- lat: -31.9505
+  lng: 115.8605
+  minel: 10
+  name: Perth
+  pop: Sydney
+- lat: -36.3987
+  lng: 174.6605
+  minel: 10
+  name: Warkworth
+  pop: Sydney
+- lat: 49.853959
+  lng: -97.2923068
+  minel: 10
+  name: Winnipeg
+  pop: New York
+- lat: -31.4826
+  lng: 118.2724
+  minel: 10
+  name: Merredin
+  pop: Sydney

@@ -154,6 +154,7 @@ text.selected-pop {
 </style>
 <link rel="stylesheet" type="text/css" href="https://kit-pro.fontawesome.com/releases/v5.10.0/css/pro.min.css">
 <body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/3.2.7/js-yaml.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/4.13.0/d3.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-geo/1.9.1/d3-geo.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-geo-projection/2.4.0/d3-geo-projection.min.js"></script>
@@ -323,7 +324,7 @@ class Controls {
                       }));
 
     f1.add(this, 'pops', ['pops', 'gx-mmp', 'o3b-pops']).onChange(
-      () => d3.queue().defer(d3.tsv, no_cache(this.pops + ".txt"))
+      () => d3.queue().defer(d3.text, no_cache(this.pops + ".yaml"))
                       .await(function(error, pops) {
                         if (error) throw error;
                         load_pops(pops);
@@ -331,16 +332,16 @@ class Controls {
 
     // reload both "gateways" and "user terminals" because we don't currently distinguish between the two
     f1.add(this, 'gateways', ['gateways', 'gx-sas', 'o3b-gateways']).onChange(
-      () => d3.queue().defer(d3.tsv, no_cache(this.gateways + ".txt"))
-                      .defer(d3.tsv, no_cache(this.users + ".txt"))
+      () => d3.queue().defer(d3.text, no_cache(this.gateways + ".yaml"))
+                      .defer(d3.text, no_cache(this.users + ".yaml"))
                       .await(function(error, gateways, users) {
                         if (error) throw error;
                         load_terminals(gateways.concat(users));
                       }));
 
     f1.add(this, 'users', ['terminals', 'terminals_1']).onChange(
-      () => d3.queue().defer(d3.tsv, no_cache(this.gateways + ".txt"))
-                      .defer(d3.tsv, no_cache(this.users + ".txt"))
+      () => d3.queue().defer(d3.text, no_cache(this.gateways + ".yaml"))
+                      .defer(d3.text, no_cache(this.users + ".yaml"))
                       .await(function(error, gateways, users) {
                         if (error) throw error;
                         load_terminals(gateways.concat(users));
@@ -483,6 +484,7 @@ function load_world(world_detailed, world, cables, cable_ls, ixps) {
 }
 
 function parse_lat_lng(x) {
+  if (typeof(x)=='number') return x*RADIANS;
   if (x.indexOf('°') != -1) {
     // DMS format
     // adapted from https://stackoverflow.com/questions/1140189/converting-latitude-and-longitude-to-decimal-values
@@ -508,31 +510,29 @@ function load_terminals(data) {
     pop.gw = [];
   }
 
-  data.forEach(function(line) {
+  var trm_data = jsyaml.load(data);
+  trm_data.forEach(function(trm) {
     var name = 'T_'+terminals.length;
-    if (line.lat==undefined || line.lng==undefined) return;
-    if (!line.name) return;
-    if (line.lat.charAt(0)=='#') return;
     var t = {
       type: 'terminal',
       id: name,
-      name: line.name || name,
-      minel: (+line.minel) || 20,
+      name: trm.name || name,
+      minel: (trm.minel) || 20,
       posGd: {
-        latitude: parse_lat_lng(line.lat),
-        longitude: parse_lat_lng(line.lng),
+        latitude: parse_lat_lng(trm.lat),
+        longitude: parse_lat_lng(trm.lng),
         height: 0
       },
       pop: undefined,
     };
     terminals.push(t);
-    if (line.pop==undefined) {
+    if (trm.pop==undefined) {
       // no POP
-    } else if (!pops.has(line.pop)) {
-      console.log("unknown POP "+line.pop+" for GW "+t.name);
+    } else if (!pops.has(trm.pop)) {
+      console.log("unknown POP "+trm.pop+" for GW "+t.name);
     } else {
-      t.pop = pops.get(line.pop);
-      pops.get(line.pop).gw.push(t);
+      t.pop = pops.get(trm.pop);
+      t.pop.gw.push(t);
       t.type = 'gw';
       //console.log("GW "+t.name+" connected to "+t.pop.name+" POP");
     }
@@ -542,19 +542,17 @@ function load_terminals(data) {
 }
 
 function load_pops(data) {
+  var pop_data = jsyaml.load(data);
   pops.clear();
 
-  data.forEach(function(line) {
-    if (line.lat==undefined || line.lng==undefined) return;
-    if (!line.name) return;
-    if (line.lat.charAt(0)=='#') return;
-    var p = new POP(line.name);
+  pop_data.forEach(function(x) {
+    var p = new POP(x.name);
     p.posGd = {
-        latitude: +line.lat * RADIANS,
-        longitude: +line.lng * RADIANS,
+        latitude: x.lat * RADIANS,
+        longitude: x.lng * RADIANS,
         height: 0
       }
-    pops.set(line.name, p);
+    pops.set(x.name, p);
   });
 }
 
@@ -1270,9 +1268,9 @@ d3.queue()
   .defer(d3.json, "https://raw.githubusercontent.com/d3/d3.github.com/master/world-50m.v1.json")
   // low resolution map:
   .defer(d3.json, "https://raw.githubusercontent.com/d3/d3.github.com/master/world-110m.v1.json")
-  .defer(d3.tsv, no_cache("pops.txt"))
-  .defer(d3.tsv, no_cache("gateways.txt"))
-  .defer(d3.tsv, no_cache("terminals.txt"))
+  .defer(d3.text, no_cache("pops.yaml"))
+  .defer(d3.text, no_cache("gateways.yaml"))
+  .defer(d3.text, no_cache("terminals.yaml"))
   .defer(d3.text, no_cache("satellites.txt"))
   .defer(d3.json, "https://raw.githubusercontent.com/telegeography/www.submarinecablemap.com/master/public/api/v2/cable/cable-geo.json")
   .defer(d3.json, "https://raw.githubusercontent.com/telegeography/www.submarinecablemap.com/master/public/api/v2/landing-point/landing-point-geo.json")
