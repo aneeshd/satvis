@@ -138,6 +138,13 @@ class Viz3d {
 
     this.scene_ready = true;
     this.redraw();
+
+    (function animate() { // IIFE
+      // Frame cycle
+      tbControls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    })();
   }
 
   redraw() {
@@ -156,7 +163,6 @@ class Viz3d {
       this.camera.aspect = this.width/this.height;
       this.camera.updateProjectionMatrix();
     }
-    requestAnimationFrame(() => 0);
   }
 
   draw_geojson(features, material) {
@@ -208,7 +214,6 @@ class Viz3d {
     // Frame cycle
     this.tbControls.update();
     this.renderer.render(this.scene, this.camera);
-    //requestAnimationFrame(this.animate);
   }
 
   draw_sat2ground(selected_sats) {
