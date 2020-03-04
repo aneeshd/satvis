@@ -1,5 +1,8 @@
 class Viz2d {
   constructor(width, height) {
+    this.EARTH_RADIUS = 6378; // km; at equator
+    this.KM_TO_DEGREES = 360 / (2 * Math.PI * this.EARTH_RADIUS);
+
     this.graticule = d3.geoGraticule();
 
     var div = d3.select("body").append("div")
@@ -55,6 +58,8 @@ class Viz2d {
     this.width = width;
     this.height = height;
 
+    this.circle = d3.geoCircle();
+
     this.image = this.new_image();
     console.log("Viz2D constructor done");
   }
@@ -85,6 +90,8 @@ class Viz2d {
       if (d[0]==undefined || d[1]==undefined) continue;
       this.draw_pop(d[0], d[1]);
     }
+
+    this.draw_exclusion_zone( terminals.filter(x => x.type=='gw'), control.gw_exclusion_radius );
   }
 
   redraw() {
@@ -532,6 +539,29 @@ class Viz2d {
       }
     }
   }
+
+  draw_exclusion_zone(trms, radius) {
+    var self = this;
+    var z = trms.map(function(trm) {
+      var pos = trm.posGd;
+      var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES;
+      return {'geometry': self.circle.center([ln, lt]).radius(radius * self.KM_TO_DEGREES)()};
+    });
+
+    var qqq = {
+      "type": "FeatureCollection",
+      "features": z.map(function (x) { return {'type': 'Feature', 'geometry': x.geometry}} )
+    };
+
+    var sat_context = this.sat_context;
+    var sat_path = this.sat_path;
+    sat_context.beginPath();
+    sat_context.lineWidth = 4;
+    sat_context.strokeStyle = "rgba(255,128,0,0.5)";
+    sat_context.fillStyle = "rgba(255,128,0,0.5)";
+    sat_path(qqq);
+    sat_context.fill();
+}
 
   set_image_url(url) {
     if (url === undefined) {
