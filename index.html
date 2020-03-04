@@ -256,7 +256,7 @@ class Controls {
   constructor() {
     this.run = true;
     this.speed = 3000;
-    this.mode = '2d';
+    this.mode = '3d';
     this.constellation = 'satellites';
     this.pops = 'pops';
     this.gateways = 'gateways';
@@ -280,6 +280,9 @@ class Controls {
     this['high-altitude'] = true;
     this.cables = true;
     this.ixps = true;
+
+    this.gw_exclusion_radius = 500;
+    this.foreign_gw_exclusion_radius = 500;
 
     this.background = (new Date()).getMonth()+1;
     this.projection = 'MtFlatPolarQuartic';
@@ -369,6 +372,8 @@ class Controls {
     f2a.add(this, 'shade');
     f2a.add(this, 'cables').onChange(() => plot_globe_with_defaults());
     f2a.add(this, 'ixps').onChange(() => plot_globe_with_defaults());
+    f2a.add(this, 'gw_exclusion_radius', 50, 1500, 50).name('GW exclusion radius (km)');
+    f2a.add(this, 'foreign_gw_exclusion_radius', 50, 1500, 50).name('Foreign GW exclusion radius (km)');
     f2a.close();
     var f2b = f2.addFolder('Map');
     f2b.add(this, 'background', ['none', 'auto'].concat([...range(1, 12)])).onChange(function () {
@@ -548,8 +553,8 @@ function load_pops(data) {
   pop_data.forEach(function(x) {
     var p = new POP(x.name);
     p.posGd = {
-        latitude: x.lat * RADIANS,
-        longitude: x.lng * RADIANS,
+        latitude: parse_lat_lng(x.lat),
+        longitude: parse_lat_lng(x.lng),
         height: 0
       }
     pops.set(x.name, p);

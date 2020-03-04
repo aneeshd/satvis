@@ -381,15 +381,15 @@ class Viz2d {
         }
 
         var el = lookangles.elevation * DEGREES;
-        var min_el = trm.minel;
+        var minel = trm.minel;
 
-        if ((el>=min_el && el<=(180-min_el))) {
+        if ((el>=minel && el<=(180-minel))) {
           var c = self.sat_context;
           var route = {type: "LineString", "coordinates": [
             [pos.longitude * DEGREES, pos.latitude * DEGREES],
             [sat.posGd.longitude * DEGREES, sat.posGd.latitude * DEGREES]
           ]};
-          if (el<(min_el+10) || el>(180-min_el-10)) {
+          if (el<(minel+10) || el>(180-minel-10)) {
             // warn when elevation angle is close to the allowed minimum
             c.strokeStyle = "rgba(199, 54, 97, 0.5)";
           } else {

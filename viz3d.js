@@ -1,6 +1,9 @@
 
 class Viz3d {
   constructor(width, height) {
+    this.EARTH_RADIUS = 6378; // km; at equator
+    this.KM_TO_DEGREES = 360 / (2 * Math.PI * this.EARTH_RADIUS);
+
     var div = d3.select("body").append("div")
       .attr("id", "viz")
       .attr("class", "3d");
@@ -23,6 +26,14 @@ class Viz3d {
       color: 0x5a5a00
     });
 
+    // circle generator
+    this.circle = d3.geoCircle();
+    this.exclusion_material = new THREE.LineBasicMaterial({
+      color: 0xaaaa00,
+      linewidth: 1
+    });
+    this.exclusion_zones = undefined;
+
     this.scene_ready = false;
     this.setup_scene();
     console.log("Viz3D constructor done");
@@ -41,7 +52,8 @@ class Viz3d {
 
     d3.select("div#viz").selectAll("canvas").remove();
 
-    var Globe = undefined;
+    var Globe = undefined,
+        self = this;
 
     Globe = new ThreeGlobe({animateIn: false})
         .globeImageUrl(control.get_background_url())
@@ -54,7 +66,7 @@ class Viz3d {
           new THREE.MeshLambertMaterial({ color: 'blue' })
         ))
         .customThreeObjectUpdate((obj, d) => {
-          Object.assign(obj.position, Globe.getCoords(d.posGd.latitude * DEGREES, d.posGd.longitude * DEGREES, d.posGd.height/6378));
+          Object.assign(obj.position, Globe.getCoords(d.posGd.latitude * DEGREES, d.posGd.longitude * DEGREES, d.posGd.height/self.EARTH_RADIUS));
           obj.material.color.set(d.posGd.height>control.altitude_threshold ? "#bda0bc" : "#03cea4");
         });
     
@@ -208,12 +220,29 @@ class Viz3d {
       // .labelText(d => d.name)
       ;
 
-      this.draw_sat2ground(selected_sats);
-      this.draw_sat2sat(selected_sats);
+    this.draw_sat2ground(selected_sats);
+    this.draw_sat2sat(selected_sats);
+
+    this.draw_exclusion_zone(terminals.filter(x => x.type=='gw'), control.gw_exclusion_radius, this.exclusion_material);
 
     // Frame cycle
     this.tbControls.update();
     this.renderer.render(this.scene, this.camera);
+  }
+
+  draw_exclusion_zone(trms, radius, material) {
+    if (this.exclusion_zones!=undefined) {
+      this.Globe.parent.remove(this.exclusion_zones);
+    }
+
+    var self = this;
+    var z = trms.map(function(trm) {
+      var pos = trm.posGd;
+      var ln = pos.longitude * DEGREES, lt = pos.latitude * DEGREES;
+      return {'geometry': self.circle.center([ln, lt]).radius(radius * self.KM_TO_DEGREES)()};
+    });
+
+    this.exclusion_zones = this.draw_geojson(z, material);
   }
 
   draw_sat2ground(selected_sats) {
@@ -243,10 +272,10 @@ class Viz3d {
           }
 
           var p1 = self.Globe.getCoords(lt, ln, 0),
-              p2 = self.Globe.getCoords(sat.posGd.latitude * DEGREES, sat.posGd.longitude * DEGREES, sat.posGd.height/6378),
+              p2 = self.Globe.getCoords(sat.posGd.latitude * DEGREES, sat.posGd.longitude * DEGREES, sat.posGd.height/self.EARTH_RADIUS),
               el = lookangles.elevation * DEGREES,
-              min_el = trm.minel,
-              geom = (el>=(min_el+10) && el<=(180-min_el-10)) ? s2g_geometry1 : s2g_geometry2;
+              minel = trm.minel,
+              geom = (el>=(minel+10) && el<=(180-minel-10)) ? s2g_geometry1 : s2g_geometry2;
       
           geom.vertices.push(
             new THREE.Vector3(p1.x, p1.y, p1.z),
@@ -275,7 +304,7 @@ class Viz3d {
 
       if (control.s2s) {
         var pos = sat.posGd,
-            p1 = self.Globe.getCoords(pos.latitude * DEGREES, pos.longitude * DEGREES, pos.height/6378),
+            p1 = self.Globe.getCoords(pos.latitude * DEGREES, pos.longitude * DEGREES, pos.height/self.EARTH_RADIUS),
             geom = pos.height > control.altitude_threshold ? s2s_geometry1 : s2s_geometry2;
 
         for (var i=0; i<control.isl.num; i++) {
@@ -287,7 +316,7 @@ class Viz3d {
             continue;
           }
 
-          var p2 = self.Globe.getCoords(s.posGd.latitude * DEGREES, s.posGd.longitude * DEGREES, s.posGd.height/6378);
+          var p2 = self.Globe.getCoords(s.posGd.latitude * DEGREES, s.posGd.longitude * DEGREES, s.posGd.height/self.EARTH_RADIUS);
 
           geom.vertices.push(
             new THREE.Vector3(p1.x, p1.y, p1.z),
