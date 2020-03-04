@@ -43,7 +43,7 @@ class Viz3d {
 
     var Globe = undefined;
 
-    Globe = new ThreeGlobe()
+    Globe = new ThreeGlobe({animateIn: false})
         .globeImageUrl(control.get_background_url())
         .bumpImageUrl('https://raw.githubusercontent.com/aneeshd/three-globe/master/example/img/earth-topology.png')
         .showAtmosphere(false)
