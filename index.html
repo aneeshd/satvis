@@ -167,6 +167,7 @@ text.selected-pop {
 <script src="https://unpkg.com/simple-statistics@7.0.2/dist/simple-statistics.min.js"></script>
 <script src="satellite.js"></script>
 <script src="solar-positions.js"></script>
+<script>document.write('<script src="/vizbase.js?dev=' + Math.floor(Math.random() * 10000) + '"\><\/script>');</script>
 <script>document.write('<script src="/viz2d.js?dev=' + Math.floor(Math.random() * 10000) + '"\><\/script>');</script>
 
 <script src="//unpkg.com/three@0.110.0"></script>
@@ -300,7 +301,12 @@ class Controls {
     if (this.background=='none') {
       return undefined;
     } else if (this.background=='auto') {
-      this.background = current_time.getMonth()+1;
+      var d = new Date(current_time);
+      this.background = d.getMonth()+1;
+    } else if (this.background=='dark') {
+      return 'https://raw.githubusercontent.com/aneeshd/three-globe/master/example/img/earth-dark.jpg';
+    } else if (this.background=='night') {
+      return 'https://raw.githubusercontent.com/aneeshd/three-globe/master/example/img/earth-night.jpg';
     }
     // forked from LeszekSwirski
     return 'https://raw.githubusercontent.com/aneeshd/earth-wallpaper/master/images/world.topo.bathy.2004' + String(this.background).padStart(2, '0') + '.3x5400x2700.jpg';
@@ -361,7 +367,7 @@ class Controls {
 
     var f2 = gui.addFolder('Display Options');
     f2.add(this, 'zen');
-    // f2.add(this, 'FOV');
+    f2.add(this, 'FOV');
     // f2.add(this, 'altitude_threshold');
     // f2.add(this, 'low-altitude');//.onChange(enabled => d3.selectAll('.lowaltitude').style('display', enabled ? null : 'none'));
     // f2.add(this, 'high-altitude');//.onChange(enabled => d3.selectAll('.highaltitude').style('display', enabled ? null : 'none'));
@@ -376,7 +382,7 @@ class Controls {
     f2a.add(this, 'foreign_gw_exclusion_radius', 50, 1500, 50).name('Foreign GW exclusion radius (km)');
     f2a.close();
     var f2b = f2.addFolder('Map');
-    f2b.add(this, 'background', ['none', 'auto'].concat([...range(1, 12)])).onChange(function () {
+    f2b.add(this, 'background', ['none', 'auto', 'dark', 'night'].concat([...range(1, 12)])).onChange(function () {
       var url = control.get_background_url();
       control.visualization.set_image_url(url);
       plot_globe_with_defaults();

@@ -1,5 +1,7 @@
-class Viz2d {
+class Viz2d extends VizBase {
   constructor(width, height) {
+    super(width, height);
+
     this.EARTH_RADIUS = 6378; // km; at equator
     this.KM_TO_DEGREES = 360 / (2 * Math.PI * this.EARTH_RADIUS);
 
@@ -55,9 +57,6 @@ class Viz2d {
     this.shade_path = undefined;
     this.map_path = undefined;
     
-    this.width = width;
-    this.height = height;
-
     this.circle = d3.geoCircle();
 
     this.image = this.new_image();
@@ -476,7 +475,7 @@ class Viz2d {
       sz = Math.max(0.7*scale*3, 0.02*3);
     }
 
-    var route = get_satellite_shape(ln, lt, sz, pos.height);
+    var route = this.get_satellite_shape(ln, lt, sz, pos.height);
     sat_context.lineWidth = 0.25;
     sat_context.beginPath();
     sat_path(route);
@@ -492,12 +491,14 @@ class Viz2d {
 
     if (control.FOV) {
       // super slow
-      var night = getFootprint(pos);
+      var footprint = this.getFootprint(pos),
+          shade_context = this.shade_context,
+          shade_path = this.shade_path;
       shade_context.beginPath();
-      shade_path(night);
-      shade_context.fillStyle = "rgba(255,0,255,0.01)";
+      shade_path(footprint);
+      shade_context.fillStyle = "rgba(255,0,255,0.05)";
       shade_context.fill();
-      shade_context.strokeStyle = "rgba(60,60,60,0.1)"
+      shade_context.strokeStyle = "rgba(255,0,255,0.1)"
       shade_context.stroke();
     }
 
@@ -597,55 +598,17 @@ class Viz2d {
     }
   }
 
-
-  // https://bl.ocks.org/tuckergordon/raw/ce135a88cd14991761ccdc937179c6c0/
-
-  /**
-  * @returns {GeoJSON.Polygon} GeoJSON describing the satellite's current footprint on the Earth
-  */
-  getFootprint(pos) {
-    var theta = /*this._halfAngle*/ 57 * RADIANS;
-
-    coreAngle = _coreAngle(theta, pos.height, R_EARTH) * DEGREES;
-
-    return d3.geoCircle()
-      .center([pos.longitude * DEGREES, pos.latitude * DEGREES])
-      .radius(coreAngle)();
-  };
-
-  /**
-  * A conical satellite with half angle casts a circle on the Earth. Find the angle
-  * from the center of the earth to the radius of this circle
-  * @param {number} theta: Satellite half angle in radians
-  * @param {number} altitude Satellite altitude
-  * @param {number} r Earth radius
-  * @returns {number} core angle in radians
-  */
-  _coreAngle(theta, altitude, r) {
-    // if FOV is larger than Earth, assume it goes to the tangential point
-    if (Math.sin(theta) > r / (altitude + r)) {
-      return Math.acos(r / (r + altitude));
-    }
-    return Math.abs(Math.asin((r + altitude) * Math.sin(theta) / r)) - theta;
-  };
-}
-
-function get_terminal_shape(ln, lt, sz, height) {
-  var circle = d3.geoCircle().center([ln, lt]).radius(sz);
-  var route = circle();
-  return route;
-}
-
-function get_satellite_shape(ln, lt, sz, height) {
-  // much faster than the geoCircle above
-  var route = {
-    type: "LineString", 
-    coordinates: [
-      [ln-sz, lt-sz, height],
-      [ln+sz, lt-sz, height],
-      [ln+sz, lt+sz, height],
-      [ln-sz, lt+sz, height],
-      [ln-sz, lt-sz, height],
-    ]};
-  return route;
+  get_satellite_shape(ln, lt, sz, height) {
+    // much faster than the geoCircle above
+    var route = {
+      type: "LineString", 
+      coordinates: [
+        [ln-sz, lt-sz, height],
+        [ln+sz, lt-sz, height],
+        [ln+sz, lt+sz, height],
+        [ln-sz, lt+sz, height],
+        [ln-sz, lt-sz, height],
+      ]};
+    return route;
+  }
 }

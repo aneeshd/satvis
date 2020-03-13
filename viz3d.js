@@ -1,6 +1,8 @@
 
-class Viz3d {
+class Viz3d extends VizBase {
   constructor(width, height) {
+    super(width, height);
+
     this.EARTH_RADIUS = 6378; // km; at equator
     this.KM_TO_DEGREES = 360 / (2 * Math.PI * this.EARTH_RADIUS);
 
@@ -26,13 +28,17 @@ class Viz3d {
       color: 0x5a5a00
     });
 
-    // circle generator
+    // circle generator for GW exclusion zones
     this.circle = d3.geoCircle();
     this.exclusion_material = new THREE.LineBasicMaterial({
       color: 0xaaaa00,
       linewidth: 1
     });
-    this.exclusion_zones = undefined;
+
+    this.fov_material = new THREE.LineBasicMaterial({
+      color: 0x0088ff,
+      linewidth: 1
+    });
 
     this.scene_ready = false;
     this.setup_scene();
@@ -94,18 +100,6 @@ class Viz3d {
     tbControls.minDistance = 101;
     tbControls.rotateSpeed = 5;
     tbControls.zoomSpeed = 0.8;
-
-    // placeholder for sat-to-ground links
-    this.s2g_line1 = new THREE.LineSegments( new THREE.Geometry(), this.s2g_material1 );
-    this.Globe.parent.add(this.s2g_line1);
-    this.s2g_line2 = new THREE.LineSegments( new THREE.Geometry(), this.s2g_material2 );
-    this.Globe.parent.add(this.s2g_line2);
-
-    // placeholder for sat-to-sat links
-    this.s2s_line1 = new THREE.LineSegments( new THREE.Geometry(), this.s2s_material1 );
-    this.Globe.parent.add(this.s2s_line1);
-    this.s2s_line2 = new THREE.LineSegments( new THREE.Geometry(), this.s2s_material2 );
-    this.Globe.parent.add(this.s2s_line2);
 
     // countries
     const w = world_detailed;
@@ -189,10 +183,12 @@ class Viz3d {
       } else if (geometry.type=='Point' || geometry.type=='MultiPoints') {
         var ptsObj = new THREE.Points(g, material);
         ret.add(ptsObj);
-      } else if (geometry.type=='LineString' || geometry.type=='Polygon') {
+      } else if (geometry.type=='LineString') {
         var lineObj = new THREE.Line(g, material);
         ret.add(lineObj);
-      // } else if () {
+      } else if (geometry.type=='Polygon') {
+        var lineObj = new THREE.Line(g, material);
+        ret.add(lineObj);
       } else {
         console.log('unknown GeoJson type', geometry);
       }
@@ -214,12 +210,9 @@ class Viz3d {
       .pointAltitude(d => d==control._from_trm || d==control._to_trm || (control._from_trm && d==control._from_trm.pop) ? 0.1 : 0.01)
       .pointColor(d => d.type=='pop' ? 'navy' : 'steelblue')
       .pointsTransitionDuration(100)
-      // .labelsData([...pops.values()].concat(terminals))
-      // .labelLat(d => d.posGd.latitude * DEGREES)
-      // .labelLng(d => d.posGd.longitude * DEGREES)
-      // .labelText(d => d.name)
       ;
 
+    this.draw_fov(selected_sats);
     this.draw_sat2ground(selected_sats);
     this.draw_sat2sat(selected_sats);
 
@@ -231,7 +224,7 @@ class Viz3d {
   }
 
   draw_exclusion_zone(trms, radius, material) {
-    if (this.exclusion_zones!=undefined) {
+    if (this.exclusion_zones !== undefined) {
       this.Globe.parent.remove(this.exclusion_zones);
     }
 
@@ -245,9 +238,30 @@ class Viz3d {
     this.exclusion_zones = this.draw_geojson(z, material);
   }
 
+  draw_fov(selected_sats) {
+    if (this.fov !== undefined) {
+      this.Globe.parent.remove(this.fov);
+    }
+
+    if (!control.FOV) {
+      return;
+    }
+
+    var self = this;
+    var z = satellites.map(function(sat) {
+      var pos = sat.posGd,
+          footprint = self.getFootprint(pos);
+      return {'geometry': footprint};
+    });
+
+    this.fov = this.draw_geojson(z, this.fov_material);
+  }
+
   draw_sat2ground(selected_sats) {
-    this.Globe.parent.remove(this.s2g_line1);
-    this.Globe.parent.remove(this.s2g_line2);
+    if (this.s2g_line1 !== undefined) {
+      this.Globe.parent.remove(this.s2g_line1);
+      this.Globe.parent.remove(this.s2g_line2);
+    }
 
     var self = this, 
         s2g_geometry1 = new THREE.Geometry(),
@@ -292,8 +306,10 @@ class Viz3d {
   }
 
   draw_sat2sat(selected_sats) {
-    this.Globe.parent.remove(this.s2s_line1);
-    this.Globe.parent.remove(this.s2s_line2);
+    if (this.s2s_line1 !== undefined) {
+      this.Globe.parent.remove(this.s2s_line1);
+      this.Globe.parent.remove(this.s2s_line2);
+    }
 
     var self = this, 
         s2s_geometry1 = new THREE.Geometry(),
