@@ -1,0 +1,150 @@
+body {
+  background-color: #0b0d0e;
+}
+
+canvas {
+  position: absolute;
+}
+svg {
+  position: absolute;
+  font-size: 9px;
+  font-family: calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif;
+  padding: 3px;
+}
+
+svg.overlay {
+  opacity: 0.9;
+  background-color: #374148;
+}
+
+div.overlay {
+  position: absolute;
+  opacity: 0.9;
+}
+
+div.overlay2 {
+  position: absolute;
+  opacity: 0.9;
+}
+
+.infopanel {
+  font-size: 9px;
+  font-family: calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif;
+  background-color: #374148;
+  padding: 3px;
+}
+
+.overlay {
+  pointer-events: none;
+}
+
+.active { fill: steelblue; }
+.inactive { fill: burlywood; }
+.range { fill: rgb(161,191,217); }
+
+.dg .c select {
+  font-size: 80%;
+}
+
+.dg input[type=text] {
+  font-size: 80%;
+}
+
+.chartRow .label {
+  fill: white;
+}
+
+g.tick line {
+  stroke: green;
+}
+g.tick text {
+  fill: green;
+}
+path.domain {
+  stroke: green;
+}
+
+div.datetime {
+  font-size: 12px;
+  font-family: calibri, -apple-system, "avenir next", avenir, roboto, noto, ubuntu, "helvetica neue", helvetica, arial, sans-serif;
+  font-weight: bold;
+  text-align: center;
+  color: green;
+}
+
+.boxtitle {
+  fill: green;
+  color: green;
+  font-weight: bold;
+  text-align: right;
+}
+
+.infopanel table {
+  color: yellowgreen;
+  border: none;
+  width: 70%;
+  text-align: left;
+  border-collapse: collapse;
+}
+
+polyline.latencyLine2 {
+  fill: none;
+  stroke: aquamarine;
+  stroke-width:3;
+  opacity: 0.5;
+}
+
+text.satellite-dish {
+  font-size: 12px;
+  font-weight: 400;
+  fill: steelblue;
+  text-anchor: middle;
+  alignment-baseline: middle;
+}
+
+text.pop {
+  font-size: 12px;
+  fill: navy;
+  fill-opacity: 0.5;
+  text-anchor: middle;
+  alignment-baseline: middle;
+}
+
+text.ixp {
+  font-size: 6px;
+  fill: maroon;
+  fill-opacity: 0.5;
+  text-anchor: middle;
+  alignment-baseline: middle;
+}
+
+text.satellite {
+  font-size: 18px;
+  fill: mediumvioletred;
+  text-anchor: middle;
+  alignment-baseline: middle;
+}
+
+text.cable-ls {
+  font-size: 6px;
+  fill: rgb(0,100,100);
+  fill-opacity: 0.5;
+  text-anchor: middle;
+  alignment-baseline: middle;
+}
+
+text.selected-terminal {
+  font-size: 24px;
+  fill: purple;
+  background-color: rgba(200,200,200,.5);
+  padding: 5px;
+  border-radius: 50%;
+}
+
+text.selected-pop {
+  font-size: 24px;
+  fill: crimson;
+  background-color: rgba(120,120,220,.5);
+  padding: 5px;
+  border-radius: 50%;
+}
