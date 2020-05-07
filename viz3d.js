@@ -46,7 +46,6 @@ class Viz3d extends VizBase {
   }
 
   setup_scene() {
-    console.log('setup_scene', world_info);
     if (world_info==undefined) {
       console.log('no world info');
       this.scene_ready = false;

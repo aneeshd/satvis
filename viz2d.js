@@ -562,7 +562,7 @@ class Viz2d extends VizBase {
     sat_context.fillStyle = "rgba(255,128,0,0.5)";
     sat_path(qqq);
     sat_context.fill();
-}
+  }
 
   set_image_url(url) {
     if (url === undefined) {
